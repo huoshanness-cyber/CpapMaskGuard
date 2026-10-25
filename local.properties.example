@@ -1,0 +1,4 @@
+﻿## This file is local-only. Copy to local.properties and fill in.
+sdk.dir=C:/Users/YOUR_USER/AppData/Local/Android/Sdk
+# Optional cloud detection (MiniMax). Leave empty to use on-device only.
+minimax.api.key=
