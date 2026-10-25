@@ -11,7 +11,7 @@
 
 **Detection:** online primary path is cloud vision (**MiniMax-M3**); offline fallback is an on-device **EfficientNet-Lite0** binary classifier (mask on / off).
 
-**Open-source and free** for global users. **Android is the full monitor.** iOS step 1 is a foreground shell (screen on): install and fill light only. Mask detection is not wired on iOS yet.
+**Open-source and free** for global users. **Android monitors in the background.** **iOS 0.3.9 monitors only in the foreground**: the screen stays on, a still is taken every 5–10 seconds, MiniMax-M3 classifies it, and a siren plays if the mask looks off. Locking the phone or leaving the app stops the camera. iOS cannot keep the camera running in the true background.
 
 ### Features
 
@@ -23,7 +23,7 @@
 - One-tap **Start Guard** / **Stop Guard**, status in plain language
 - **In-app language option: Chinese / English**
 - Optional snore cue as an assist signal
-- Open-source, free worldwide. Android monitors the mask. iOS step 1 is the foreground shell only.
+- Open-source, free worldwide. Android can keep watching in the background. iOS watches only while the app stays open and the screen stays on.
 
 **Disclaimer:** Personal assistive tool only — not a medical device or diagnosis tool. Follow your clinician for sleep apnea care.
 
@@ -35,7 +35,7 @@
 
 **判定：**联网时主用云端看图（**MiniMax-M3**）；断网时用本机 **EfficientNet-Lite0** 二分类（戴着 / 脱落）兜底。
 
-**开源、全球免费**。**安卓版是完整监测。** iOS 第 1 步是亮屏前台壳：能安装、能补光，还没接面罩判定。
+**开源、全球免费**。**安卓版可以在后台监测。** **iOS 0.3.9 只在前台监测**：屏幕保持亮着，大约每 5–10 秒拍一张，交给 MiniMax-M3 看面罩，脱落就响铃。锁屏或离开 App，相机会停。iOS 做不到真正的后台常开相机。
 
 ### 功能
 
@@ -47,7 +47,7 @@
 - 一键「开始守护 / 停止守护」，状态用人话显示
 - **应用内语言可切换：中文 / English**
 - 可选鼾声辅助信号
-- 开源免费。安卓版会判断面罩；iOS 第 1 步只有亮屏前台壳。
+- 开源免费。安卓版可以在后台看面罩；iOS 只有亮着屏、停在应用里才会看。
 
 **免责声明：**个人辅助用途，不是医疗器械，不能替代诊疗。请遵医嘱治疗睡眠呼吸暂停。
 
@@ -77,14 +77,34 @@
 
 用 Android Studio 打开工程；复制并填写 `local.properties`；可选写入 MiniMax Key；**不要提交**该文件。
 
-### iOS step 1 / 亮屏前台壳
+### iOS foreground monitor / 亮屏前台监测
 
 Project / 工程：`ios/CpapMaskGuard/CpapMaskGuard.xcodeproj`  
-Target device / 目标机：iPhone, including iPhone 17 Pro Max. Portrait only.
+Target device / 目标机：iPhone, including iPhone 17 Pro Max. Portrait only. Marketing version **0.3.9** (build 3).
 
-This build does **not** keep the camera on in the background. Lock the screen or leave the app and the fill light stops. Mask detection, MiniMax calls, and log upload are later steps. There is no separate light-test app. Marketing version **0.3.8**. iOS settings do not include「使用前检查本机」.
+iOS **cannot** keep the camera on in the true background. The home screen says so. Lock the screen or switch apps and capture, the siren, and the fill light all stop. There is no「使用前检查本机」and no burn-in page.
 
-这一步**不会**在后台一直开相机。锁屏或离开 App，补光就停。面罩判定、MiniMax、日志回传都还没做。没有单独的灯光测试 App。版本 **0.3.8**。iOS 设置里没有「使用前检查本机」。
+iOS **不能**在真正的后台开着相机。主屏写明了这一点。锁屏或切到别的应用，拍照、铃声、补光都会停。没有「使用前检查本机」，也没有烤机页。
+
+#### Start Guard / 开始守护怎么工作
+
+1. Put the phone where the chosen camera can see the pillow. Front mode points the **screen** at the pillow (full white fill, brightness slider). Rear mode points the **rear camera** at the pillow and uses your own lamp; the torch is optional, off by default, and the slider calls `setTorchModeOn(level:)`.
+2. Copy `ios/CpapMaskGuard/Config/Secrets.xcconfig.example` to `Secrets.xcconfig` in the same folder (gitignored). Set `MINIMAX_API_KEY` there. The app reads it from Info.plist at runtime. **Never commit a real key.** Without a key, frames are not uploaded and the cloud cannot classify them.
+3. Tap **开始守护 / Start guard**. The app asks for the **camera** (required), then the **microphone** (local snore cue only, audio is not uploaded) and **notifications** (mask-off alert). Idle timer is disabled so the screen stays on while you remain in the app.
+4. About every **8 seconds** (slider **5–10s**, same range as the Android non-low-end policy) it grabs a JPEG, shrinks the long edge to 640, and POSTs it to `https://api.minimax.cn/v1/chat/completions` as **MiniMax-M3** with thinking **disabled**, image **detail low**, temperature 0.1, and max 64 completion tokens. The prompt matches the Android client.
+5. The home card shows **capture time**, **result** (`面罩正常` / `面罩脱落` / `未检测到人` / `不确定`), and **latency** (judge / capture-to-judge / round). One `MASK_OFF` frame starts the siren. `NO_PERSON` does not. The siren loops until you tap **停止铃声**; guarding continues, with a 2 second quiet period. **停止守护** stops the camera, the light, and the sound.
+6. If the microphone is allowed, a local RMS / low-frequency / zero-cross heuristic can confirm snoring and alarm on its own (about 6s, or 12s when the camera just said the mask is on). Snore never blocks the camera. If the mic fails, capture continues.
+7. The siren uses media playback, so the silent switch does not mute it, but a low side-button volume still does. The app cannot force the hardware volume. Raise it before sleep. Vibration and a notification are the backup.
+8. Settings → 本机状态 / 拍几张戴着面罩的样子 / 查看日志 stay on the navigation stack (the 0.3.8 crash fix). Status is read-only plus a health score that **does not** stop the guard. Sample frames (latest 12 JPEG + JSON) live under Application Support `MaskFrames` and are not uploaded as files. The log list is memory-only for this launch.
+
+1. 把手机摆到能看见枕头的位置。前摄模式让**屏幕**朝向枕头（整屏白、亮度滑条）。后摄模式让**后摄**朝向枕头，默认用你自己的灯；手电筒可选，默认关，滑条走 `setTorchModeOn(level:)`。
+2. 把 `ios/CpapMaskGuard/Config/Secrets.xcconfig.example` 复制成同目录 `Secrets.xcconfig`（已 gitignore），写上 `MINIMAX_API_KEY`。运行时从 Info.plist 读取。**不要把真 Key 提交进 git。** 没有 Key 时照片不会上传，云端也不能判定。
+3. 点 **开始守护**。会先要**相机**（必须）。然后要**麦克风**（只在本机听鼾，声音不上传）和**通知**（脱落提醒）。守护期间关闭自动锁屏，但你必须留在这个应用里。
+4. 默认大约每 **8 秒**一张（滑条 **5–10 秒**，与安卓非低端档相同）。JPEG 长边缩到 640，POST 到 `https://api.minimax.cn/v1/chat/completions`，模型 **MiniMax-M3**，思考关闭，图片 detail 为 low，temperature 0.1，最多 64 个 completion token。提示词与安卓客户端一致。
+5. 主屏显示**拍摄时间**、**结果**（面罩正常 / 面罩脱落 / 未检测到人 / 不确定）和**耗时**（判定 / 拍到判定 / 整轮）。一帧 `MASK_OFF` 就响铃。`NO_PERSON` 不响。铃声要自己点 **停止铃声** 才停，守护继续，并安静约 2 秒。**停止守护**会关掉相机、补光和铃声。
+6. 允许麦克风后，本机用响度、低频和过零率听鼾，确认打呼后可以单独响铃（相机没说「戴着」时约 6 秒，刚判成戴着时约 12 秒）。听鼾不挡住拍照。麦克风失败时仍然只看相机。
+7. 铃声走媒体播放，静音拨片不会把它关掉，但侧边音量很低就会听不见。应用不能强行把系统音量拉满。睡前请把音量调大。震动和通知是辅助。
+8. 设置里的本机状态、拍几张戴着面罩的样子、查看日志仍走导航栈（0.3.8 的闪退修复还在）。本机状态只读，外加一个**不会因此停守护**的健康分。样张最多留 12 张 JPEG 和 JSON，在 Application Support 的 `MaskFrames`，这些文件本身不上传。日志只在这一次打开的内存里。
 
 Scheme：`CpapMaskGuard`。Bundle id：`app.cpapmaskguard`。签名已写在工程里：**Automatically manage signing**，Team **敏敏 史 (Personal Team)** `H45MTM24C4`。模拟器实际用 ad-hoc 签名，不需要真机 UDID。
 
@@ -108,7 +128,7 @@ xcrun simctl launch "$UDID" app.cpapmaskguard
 
 产物：`/tmp/CpapMaskGuardSim/Build/Products/Debug-iphonesimulator/CpapMaskGuard.app`。
 
-打开后主屏是「还没开始」和「开始守护」。点「设置与本机」展开补光两档：前摄白屏（`UIScreen.brightness`）和后摄自备光（手电筒滑条调用 `setTorchModeOn(level:)`，默认关）。判定还没接。同一折叠区可以打开「本机状态」（只读）、「拍几张戴着面罩的样子」（即将上线，不开相机）和「查看日志」（只记这一次启动，不写文件）。没有「使用前检查本机」。
+打开后主屏是「还没开始」和「开始守护」，并写明只能亮屏前台监测。点「设置与本机」可选前摄白屏（`UIScreen.brightness`）或后摄自备光（手电筒滑条 `setTorchModeOn(level:)`，默认关），以及 5–10 秒抓拍间隔。同一折叠区可以打开「本机状态」「拍几张戴着面罩的样子」和「查看日志」。打开样张页本身不会开相机。没有「使用前检查本机」。
 
 UI 检查（可选）：
 
@@ -118,11 +138,11 @@ xcodebuild -project CpapMaskGuard.xcodeproj -scheme CpapMaskGuard \
   -configuration Debug test
 ```
 
-MiniMax key：把 `ios/CpapMaskGuard/Config/Secrets.xcconfig.example` 复制成同目录 `Secrets.xcconfig`（已 gitignore）。第 1 步不会调用接口。
+MiniMax key：把 `ios/CpapMaskGuard/Config/Secrets.xcconfig.example` 复制成同目录 `Secrets.xcconfig`（已 gitignore），填入 Key 后重新编译安装。Key 只出现在本机 Info.plist 的构建结果里，源码和日志都不写真 Key。
 
-真机以后再装。Team 已是 `H45MTM24C4`。连上 iPhone 并在 Xcode 里选这台手机 Run 时，Xcode 会向该 Personal Team 自动注册 UDID 并生成描述文件。手机没连上之前没有真机 profile。
+真机：用 Xcode 打开工程，选已连接的 iPhone，Run。签名是 Automatic，Team `H45MTM24C4`。模拟器没有真手电筒，云端判定也需要真人和网络，床头测试请用真机，并保持 App 在前台、屏幕常亮。
 
-English: scheme `CpapMaskGuard`, Automatic signing, team `H45MTM24C4`. Build and `simctl install` / `simctl launch` as above. This machine’s iOS 27.1 runtime only boots **iPhone Duo**. Home screen is one status line plus Start. Settings holds the two fill-light modes, plus phone status, mask-photo (not wired), and an in-memory log. There is no pre-use phone check. Device install waits until a phone is plugged in.
+English: scheme `CpapMaskGuard`, Automatic signing, team `H45MTM24C4`. Build and `simctl install` / `simctl launch` as above when an iOS Simulator runtime is available. Device test: plug in an iPhone, select it, Run. Keep the app in the foreground. The API key comes only from local `Secrets.xcconfig`.
 
 ---
 
@@ -146,7 +166,7 @@ MIT — see [LICENSE](LICENSE).
 ## Roadmap / 路线图
 
 - Strengthen on-device EfficientNet-Lite0 mask on/off classifier  
-- iOS step 1 foreground shell is in `ios/`. Next: on-device monitoring while the screen stays on. Background camera is not planned.
+- iOS foreground monitoring (screen on, MiniMax-M3, siren, local snore) is in `ios/`. Background camera is not planned.
 - First-run UX polish  
 
-加强本机 EfficientNet-Lite0；iOS 第 1 步亮屏壳已在 `ios/`，下一步才接前台监测（不做后台常开相机）；优化首次使用体验。
+加强本机 EfficientNet-Lite0；iOS 亮屏前台监测已在 `ios/`（不做后台常开相机）；优化首次使用体验。

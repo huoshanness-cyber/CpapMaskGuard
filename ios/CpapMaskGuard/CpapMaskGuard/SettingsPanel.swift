@@ -79,12 +79,30 @@ struct SettingsPanel: View {
                 .font(.footnote)
                 .foregroundStyle(secondary)
                 .fixedSize(horizontal: false, vertical: true)
+            intervalSlider
 
             if model.fillMode == .frontScreen {
                 brightnessSlider
             } else {
                 torchControls
             }
+        }
+    }
+
+    private var intervalSlider: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text("\(model.l10n.intervalLabel) \(model.intervalSeconds)s")
+                .font(.subheadline)
+                .foregroundStyle(primary)
+            Slider(
+                value: Binding(
+                    get: { Double(model.intervalSeconds) },
+                    set: { model.setInterval(Int($0.rounded())) }
+                ),
+                in: 5...10,
+                step: 1
+            )
+            .tint(model.whiteScreenActive ? GuardTheme.ink : GuardTheme.accent)
         }
     }
 

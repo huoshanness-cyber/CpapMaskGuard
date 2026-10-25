@@ -7,7 +7,7 @@ final class MainScreenUITests: XCTestCase {
 
         XCTAssertTrue(app.staticTexts["还没开始"].waitForExistence(timeout: 10), app.debugDescription)
         XCTAssertTrue(app.buttons["开始守护"].exists)
-        XCTAssertTrue(app.staticTexts["这一版只在亮屏、停在前台时工作。锁屏或切到别的应用，补光会停，相机也不会在后台继续开着。"].exists)
+        XCTAssertTrue(app.staticTexts["iOS 不能在锁屏或后台开着相机。只有亮着屏、并且停在这个应用里，才会拍照、看面罩、响铃。锁屏或切到别的应用，相机会停，铃声也会停。"].exists)
 
         let settings = app.buttons["设置与本机"]
         XCTAssertTrue(settings.waitForExistence(timeout: 4), app.debugDescription)

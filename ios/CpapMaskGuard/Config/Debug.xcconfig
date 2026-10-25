@@ -2,6 +2,7 @@
 // Automatic signing for every target. Personal Team「敏敏 史」.
 // App-only settings live on the CpapMaskGuard target so they do not rename the UI test module.
 // MINIMAX_API_KEY stays empty unless Config/Secrets.xcconfig (gitignored) sets it.
+// The app reads the built Info.plist value. Do not put a real key in this file.
 
 CODE_SIGN_STYLE = Automatic
 DEVELOPMENT_TEAM = H45MTM24C4

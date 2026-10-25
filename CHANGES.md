@@ -1,3 +1,16 @@
+# iOS 0.3.9 · 亮屏前台监测（可上机测）
+
+在 0.3.8 设置页不闪退的基础上，把 iOS 从补光壳接成可测的前台守护。版本 **0.3.9**（build 3）。
+
+- 开始守护后保持亮屏，按 5–10 秒（默认 8 秒）用前摄或后摄拍一张
+- 前摄 + 可调白屏，或后摄 + 自备光；手电筒可选，`setTorchModeOn(level:)`，默认关
+- 有 `Secrets.xcconfig` 注入的 `MINIMAX_API_KEY` 时，把 JPEG 发给 `api.minimax.cn` 的 MiniMax-M3（思考关、detail low）。源码不写真 Key
+- 一帧面罩脱落就循环响铃并震动，直到点「停止铃声」；守护继续。无人不响
+- 麦克风只在本机听鼾，不上传；失败不影响拍照。通知用于脱落和「已经离开前台」
+- 主屏显示拍摄时间、结果、判定耗时。设置三页仍走导航栈，没有「使用前检查本机」
+- 最近 12 张样张和 JSON 留在本机；健康分只展示，不停守护
+- iOS 不能在锁屏或后台开相机。离开前台会停掉拍照和铃声
+
 # iOS 0.3.8 · 设置三页不再闪退，去掉使用前检查
 
 iPhone 个人包（0.3.7 壳）里，设置里的「本机状态」「拍几张戴着面罩的样子」「查看日志」一点就闪退。崩溃栈是主线程 `EXC_BREAKPOINT` / `SIGTRAP`：`EnvironmentObject.error()` ← `PlaceholderPage.title` ← `PlaceholderPage.body`。这三行和「使用前检查本机」都是 `DisclosureGroup` 里的 `NavigationLink`，而 `GuardModel` 只注入在主屏 `ZStack` 上，推上去的页面拿不到。页面里没有强制拆包，没有去开一个空日志路径，也没有在后台开相机。
