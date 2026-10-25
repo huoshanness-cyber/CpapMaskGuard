@@ -3,9 +3,10 @@ import SwiftUI
 struct RootView: View {
     @StateObject private var model = GuardModel()
     @Environment(\.scenePhase) private var scenePhase
+    @State private var path = NavigationPath()
 
     var body: some View {
-        NavigationStack {
+        NavigationStack(path: $path) {
             ZStack {
                 background.ignoresSafeArea()
                 ScrollView {
@@ -18,7 +19,9 @@ struct RootView: View {
                             .font(.footnote)
                             .foregroundStyle(foregroundMuted)
                             .fixedSize(horizontal: false, vertical: true)
-                        SettingsPanel()
+                        SettingsPanel { route in
+                            path.append(route)
+                        }
                         Text(model.l10n.versionFooter)
                             .font(.caption)
                             .foregroundStyle(foregroundMuted)
@@ -30,9 +33,18 @@ struct RootView: View {
                     .padding(.bottom, 28)
                 }
             }
+            .navigationTitle(model.l10n.appName)
             .toolbar(.hidden, for: .navigationBar)
             .environmentObject(model)
+            .navigationDestination(for: SettingsRoute.self) { route in
+                // Home-only `.environmentObject` does not reach a pushed screen.
+                // PlaceholderPage.title crashed in EnvironmentObject.error()
+                // because of that. Inject GuardModel on the destination itself.
+                SettingsRouteScreen(route: route, model: model)
+                    .environmentObject(model)
+            }
         }
+        .environmentObject(model)
         .preferredColorScheme(model.whiteScreenActive ? .light : .dark)
         .onChange(of: scenePhase) { _, phase in
             guard phase == .background else { return }

@@ -2,13 +2,17 @@ import SwiftUI
 
 struct SettingsPanel: View {
     @EnvironmentObject private var model: GuardModel
+    /// Pushes a settings screen on the root stack.
+    /// A `NavigationLink` inside this disclosure did not inherit `GuardModel`,
+    /// so `PlaceholderPage.title` trapped in `EnvironmentObject.error()`.
+    var open: (SettingsRoute) -> Void
 
     var body: some View {
         DisclosureGroup {
             VStack(alignment: .leading, spacing: 18) {
                 languageRow
                 lightSection
-                placeholderSection
+                phoneSection
                 permissionSection
                 Text(AppSecrets.hasMinimaxKey ? model.l10n.keyStatusReady : model.l10n.keyStatusEmpty)
                     .font(.footnote)
@@ -131,33 +135,35 @@ struct SettingsPanel: View {
         }
     }
 
-    private var placeholderSection: some View {
+    private var phoneSection: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text(model.l10n.sectionPlaceholders)
+            Text(model.l10n.sectionPhone)
                 .font(.subheadline.weight(.semibold))
                 .foregroundStyle(primary)
-            navLink(model.l10n.burnInTitle, kind: .burnIn)
-            navLink(model.l10n.healthTitle, kind: .health)
-            navLink(model.l10n.calibrateTitle, kind: .calibrate)
-            navLink(model.l10n.logsTitle, kind: .logs)
+            routeButton(model.l10n.healthTitle, route: .status, id: "settings.route.status")
+            routeButton(model.l10n.calibrateTitle, route: .baseline, id: "settings.route.baseline")
+            routeButton(model.l10n.logsTitle, route: .logs, id: "settings.route.logs")
         }
     }
 
-    private func navLink(_ title: String, kind: PlaceholderKind) -> some View {
-        NavigationLink {
-            PlaceholderPage(kind: kind)
+    private func routeButton(_ title: String, route: SettingsRoute, id: String) -> some View {
+        Button {
+            open(route)
         } label: {
             HStack {
                 Text(title)
                     .foregroundStyle(primary)
+                    .multilineTextAlignment(.leading)
                 Spacer()
                 Image(systemName: "chevron.right")
                     .font(.footnote.weight(.semibold))
                     .foregroundStyle(secondary)
             }
             .padding(.vertical, 8)
+            .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+        .accessibilityIdentifier(id)
     }
 
     private var permissionSection: some View {

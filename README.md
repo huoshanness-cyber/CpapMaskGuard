@@ -82,9 +82,9 @@
 Project / 工程：`ios/CpapMaskGuard/CpapMaskGuard.xcodeproj`  
 Target device / 目标机：iPhone, including iPhone 17 Pro Max. Portrait only.
 
-This build does **not** keep the camera on in the background. Lock the screen or leave the app and the fill light stops. Mask detection, MiniMax calls, and log upload are later steps. There is no separate light-test app.
+This build does **not** keep the camera on in the background. Lock the screen or leave the app and the fill light stops. Mask detection, MiniMax calls, and log upload are later steps. There is no separate light-test app. Marketing version **0.3.8**. iOS settings do not include「使用前检查本机」.
 
-这一步**不会**在后台一直开相机。锁屏或离开 App，补光就停。面罩判定、MiniMax、日志回传都还没做。没有单独的灯光测试 App。
+这一步**不会**在后台一直开相机。锁屏或离开 App，补光就停。面罩判定、MiniMax、日志回传都还没做。没有单独的灯光测试 App。版本 **0.3.8**。iOS 设置里没有「使用前检查本机」。
 
 Scheme：`CpapMaskGuard`。Bundle id：`app.cpapmaskguard`。签名已写在工程里：**Automatically manage signing**，Team **敏敏 史 (Personal Team)** `H45MTM24C4`。模拟器实际用 ad-hoc 签名，不需要真机 UDID。
 
@@ -108,7 +108,7 @@ xcrun simctl launch "$UDID" app.cpapmaskguard
 
 产物：`/tmp/CpapMaskGuardSim/Build/Products/Debug-iphonesimulator/CpapMaskGuard.app`。
 
-打开后主屏是「还没开始」和「开始守护」。点「设置与本机」展开补光两档：前摄白屏（`UIScreen.brightness`）和后摄自备光（手电筒滑条调用 `setTorchModeOn(level:)`，默认关）。判定还没接。
+打开后主屏是「还没开始」和「开始守护」。点「设置与本机」展开补光两档：前摄白屏（`UIScreen.brightness`）和后摄自备光（手电筒滑条调用 `setTorchModeOn(level:)`，默认关）。判定还没接。同一折叠区可以打开「本机状态」（只读）、「拍几张戴着面罩的样子」（即将上线，不开相机）和「查看日志」（只记这一次启动，不写文件）。没有「使用前检查本机」。
 
 UI 检查（可选）：
 
@@ -122,7 +122,7 @@ MiniMax key：把 `ios/CpapMaskGuard/Config/Secrets.xcconfig.example` 复制成�
 
 真机以后再装。Team 已是 `H45MTM24C4`。连上 iPhone 并在 Xcode 里选这台手机 Run 时，Xcode 会向该 Personal Team 自动注册 UDID 并生成描述文件。手机没连上之前没有真机 profile。
 
-English: scheme `CpapMaskGuard`, Automatic signing, team `H45MTM24C4`. Build and `simctl install` / `simctl launch` as above. This machine’s iOS 27.1 runtime only boots **iPhone Duo**. Home screen is one status line plus Start. Settings holds the two fill-light modes. Device install waits until a phone is plugged in.
+English: scheme `CpapMaskGuard`, Automatic signing, team `H45MTM24C4`. Build and `simctl install` / `simctl launch` as above. This machine’s iOS 27.1 runtime only boots **iPhone Duo**. Home screen is one status line plus Start. Settings holds the two fill-light modes, plus phone status, mask-photo (not wired), and an in-memory log. There is no pre-use phone check. Device install waits until a phone is plugged in.
 
 ---
 
