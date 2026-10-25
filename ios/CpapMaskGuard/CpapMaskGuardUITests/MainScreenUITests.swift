@@ -37,4 +37,59 @@ final class MainScreenUITests: XCTestCase {
         XCTAssertTrue(brightness.waitForExistence(timeout: 4), app.debugDescription)
         XCTAssertTrue(app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", "UIScreen.brightness")).firstMatch.exists)
     }
+
+    func testSettingsRoutesStayUpAndBurnInIsGone() {
+        let app = XCUIApplication()
+        app.launch()
+
+        let settings = app.buttons["设置与本机"]
+        XCTAssertTrue(settings.waitForExistence(timeout: 8), app.debugDescription)
+        settings.tap()
+
+        XCTAssertFalse(app.buttons["使用前检查本机"].exists)
+        XCTAssertFalse(app.staticTexts["使用前检查本机"].exists)
+        XCTAssertFalse(app.buttons["Phone check before use"].exists)
+
+        openRoute(app, "settings.route.status", "本机状态", expect: "监测健康分")
+        openRoute(app, "settings.route.baseline", "拍几张戴着面罩的样子", expect: "不会打开相机")
+        openRoute(app, "settings.route.logs", "查看日志", expect: "打开了面罩守护")
+
+        app.swipeUp()
+        XCTAssertFalse(app.buttons["使用前检查本机"].exists)
+        XCTAssertFalse(app.staticTexts["使用前检查本机"].exists)
+    }
+
+    private func openRoute(_ app: XCUIApplication, _ identifier: String, _ title: String, expect: String) {
+        var button = app.buttons[identifier]
+        if !button.waitForExistence(timeout: 2) || !button.isHittable {
+            app.swipeUp()
+            button = app.buttons[identifier]
+        }
+        if !button.exists {
+            let settings = app.buttons["设置与本机"]
+            if settings.exists {
+                settings.tap()
+            }
+            if !app.buttons[identifier].waitForExistence(timeout: 2) {
+                app.swipeUp()
+            }
+            button = app.buttons[identifier]
+        }
+        XCTAssertTrue(button.waitForExistence(timeout: 4), app.debugDescription)
+        XCTAssertTrue(app.staticTexts[title].exists || app.buttons[title].exists, app.debugDescription)
+        button.tap()
+
+        let marker = app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", expect)).firstMatch
+        XCTAssertTrue(marker.waitForExistence(timeout: 4), app.debugDescription)
+
+        let titledBack = app.navigationBars.buttons["面罩守护"]
+        if titledBack.waitForExistence(timeout: 2) {
+            titledBack.tap()
+        } else {
+            let back = app.navigationBars.buttons.firstMatch
+            XCTAssertTrue(back.waitForExistence(timeout: 2), app.debugDescription)
+            back.tap()
+        }
+        XCTAssertTrue(app.buttons["设置与本机"].waitForExistence(timeout: 4), app.debugDescription)
+    }
 }

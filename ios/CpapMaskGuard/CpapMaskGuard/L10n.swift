@@ -20,7 +20,7 @@ struct L10n {
     var stop: String { language == .zh ? "停止守护" : "Stop guard" }
     var settingsClosed: String { language == .zh ? "设置与本机" : "Settings and this phone" }
     var sectionLight: String { language == .zh ? "补光" : "Fill light" }
-    var sectionPlaceholders: String { language == .zh ? "接下来再接" : "Wired in a later step" }
+    var sectionPhone: String { language == .zh ? "本机" : "This phone" }
     var sectionPermissions: String { language == .zh ? "权限" : "Permissions" }
     var languageLabel: String { language == .zh ? "语言" : "Language" }
 
@@ -123,30 +123,81 @@ struct L10n {
             : "Cloud key: not set. Copy Secrets.xcconfig.example to Secrets.xcconfig. Do not commit it."
     }
 
-    var burnInTitle: String { language == .zh ? "使用前检查本机" : "Phone check before use" }
     var healthTitle: String { language == .zh ? "本机状态" : "Phone status" }
     var calibrateTitle: String { language == .zh ? "拍几张戴着面罩的样子" : "Sample photos with the mask" }
     var logsTitle: String { language == .zh ? "查看日志" : "View logs" }
 
-    var burnInBody: String {
+    var healthComingSoon: String {
         language == .zh
-            ? "占位。安卓版有约 5 分钟的使用前检查。iOS 这一步还没接，不会开长时压测。"
-            : "Placeholder. Android has a short pre-use check. iOS does not run it in this step."
+            ? "即将上线：监测健康分。这一页现在不打分，也不会因此停下守护。"
+            : "Coming later: a monitoring score. This page does not score the phone and does not stop the guard."
     }
-    var healthBody: String {
+    var baselineComingSoon: String {
         language == .zh
-            ? "占位。监测真的跑起来之后，才会有本机状态。现在没有分数。"
-            : "Placeholder. A status score arrives only after real monitoring exists. There is no score now."
+            ? "即将上线。这一版不会打开相机拍戴着面罩的样张，锁屏或切到别的应用时也不会在后台开摄像头。回到主屏点「开始守护」，目前只切换补光。"
+            : "Coming later. This version does not open the camera to take mask photos, and it does not keep the camera on in the background. Start on the home screen only changes the fill light for now."
     }
-    var calibrateBody: String {
+    var logsComingSoon: String {
         language == .zh
-            ? "占位。下一步才会拍「没戴 / 戴着」样张。现在点开始守护，只切换补光。"
-            : "Placeholder. Sample photos come in the next step. Start only changes the fill light for now."
+            ? "即将上线：面罩判定的监测日志。下面只记这一次打开应用时的操作。只在内存里，关掉应用就没了，不会写文件，也不会上传。"
+            : "Coming later: mask-detection logs. Below is only what happened during this launch. It stays in memory, is not written to a file, and is not uploaded."
     }
-    var logsBody: String {
-        language == .zh
-            ? "占位。这一步不写监测日志，也不会把记录传出去。"
-            : "Placeholder. This step does not write a monitoring log and does not upload anything."
+    var logsEmpty: String { language == .zh ? "还没有日志。" : "No log lines yet." }
+
+    var rowPhase: String { language == .zh ? "守护" : "Guard" }
+    var rowFill: String { language == .zh ? "补光" : "Fill light" }
+    var rowTorch: String { language == .zh ? "手电筒" : "Torch" }
+    var rowCamera: String { language == .zh ? "相机权限" : "Camera access" }
+    var rowDevice: String { language == .zh ? "机型" : "Device" }
+    var rowBattery: String { language == .zh ? "电量" : "Battery" }
+    var cameraAllowed: String { language == .zh ? "已允许" : "Allowed" }
+    var cameraBlocked: String { language == .zh ? "未允许" : "Not allowed" }
+    var cameraNotAsked: String { language == .zh ? "还没问过" : "Not asked yet" }
+    var valueUnknown: String { language == .zh ? "未知" : "Unknown" }
+    var torchOffNow: String { language == .zh ? "关着" : "Off" }
+    var batteryUnknown: String { language == .zh ? "读不到" : "Unavailable" }
+
+    func batteryPercent(_ value: Int) -> String { "\(value)%" }
+
+    func pair(_ label: String, _ value: String) -> String {
+        let shown = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        let safe = shown.isEmpty ? valueUnknown : shown
+        return language == .zh ? "\(label)：\(safe)" : "\(label): \(safe)"
+    }
+
+    var logOpened: String { language == .zh ? "打开了面罩守护" : "Opened mask guard" }
+    var logStarted: String { language == .zh ? "开始守护" : "Started guard" }
+    var logStopped: String { language == .zh ? "停止守护" : "Stopped guard" }
+    var logLeft: String { language == .zh ? "离开前台，补光已停" : "Left the foreground. Light off." }
+    var logCameraDenied: String { language == .zh ? "没有相机权限，没有开始" : "Camera access is off. Did not start." }
+    var logTorchOff: String { language == .zh ? "手电筒已关" : "Torch off" }
+
+    func logFill(_ mode: FillLightMode) -> String {
+        language == .zh ? "补光改为\(fillName(mode))" : "Fill light set to \(fillName(mode))"
+    }
+
+    func logTorchOn(_ status: String) -> String {
+        let shown = status.trimmingCharacters(in: .whitespacesAndNewlines)
+        let safe = shown.isEmpty ? torchOffNow : shown
+        return language == .zh ? "手电筒：\(safe)" : "Torch: \(safe)"
+    }
+
+    func logMic(_ ok: Bool) -> String {
+        ok
+            ? (language == .zh ? "麦克风权限：已允许（不录音）" : "Microphone: allowed (not recording)")
+            : (language == .zh ? "麦克风权限：未允许" : "Microphone: not allowed")
+    }
+
+    func logNotify(_ ok: Bool) -> String {
+        ok
+            ? (language == .zh ? "通知权限：已允许（不报警）" : "Notifications: allowed (no alarm)")
+            : (language == .zh ? "通知权限：未允许" : "Notifications: not allowed")
+    }
+
+    func logNotifyFailed(_ message: String) -> String {
+        let shown = message.trimmingCharacters(in: .whitespacesAndNewlines)
+        let safe = shown.isEmpty ? valueUnknown : shown
+        return language == .zh ? "通知权限申请失败：\(safe)" : "Notification request failed: \(safe)"
     }
 
     var micButton: String { language == .zh ? "申请麦克风（占位）" : "Ask for microphone (placeholder)" }
@@ -163,7 +214,7 @@ struct L10n {
     }
     var versionFooter: String {
         language == .zh
-            ? "iOS 0.3.7 · 第 1 步亮屏前台 · MIT"
-            : "iOS 0.3.7 · step 1, screen on · MIT"
+            ? "iOS 0.3.8 · 第 1 步亮屏前台 · MIT"
+            : "iOS 0.3.8 · step 1, screen on · MIT"
     }
 }

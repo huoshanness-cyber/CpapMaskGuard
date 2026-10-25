@@ -1,3 +1,17 @@
+# iOS 0.3.8 · 设置三页不再闪退，去掉使用前检查
+
+iPhone 个人包（0.3.7 壳）里，设置里的「本机状态」「拍几张戴着面罩的样子」「查看日志」一点就闪退。崩溃栈是主线程 `EXC_BREAKPOINT` / `SIGTRAP`：`EnvironmentObject.error()` ← `PlaceholderPage.title` ← `PlaceholderPage.body`。这三行和「使用前检查本机」都是 `DisclosureGroup` 里的 `NavigationLink`，而 `GuardModel` 只注入在主屏 `ZStack` 上，推上去的页面拿不到。页面里没有强制拆包，没有去开一个空日志路径，也没有在后台开相机。
+
+- iOS 设置里去掉「使用前检查本机」（没有留下会崩的死按钮）
+- 其余三页改由主屏 `NavigationStack` 的 path 打开，`GuardModel` 直接传进页面
+- 本机状态：只读显示守护、补光、手电筒、相机权限、机型、电量；健康分写明即将上线
+- 拍几张戴着面罩的样子：即将上线，这一版不打开相机
+- 查看日志：只记这一次打开应用里的操作，放内存，不写文件、不上传
+
+安卓 0.3.7 说明见下文，安卓的使用前检查没有动。
+
+---
+
 # CpapMaskGuard 0.3.7 · 主屏生活化（参考公开使用习惯，视觉自研）
 
 ## 相对 0.3.6

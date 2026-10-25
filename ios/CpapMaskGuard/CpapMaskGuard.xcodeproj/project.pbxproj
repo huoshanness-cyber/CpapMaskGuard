@@ -8,7 +8,7 @@
 
 /* Begin PBXBuildFile section */
 		09969E33F24E84F620A09BFC /* Theme.swift in Sources */ = {isa = PBXBuildFile; fileRef = 67CDE4A249460EEED3B8A44C /* Theme.swift */; };
-		173ED01886488B4343743207 /* PlaceholderPage.swift in Sources */ = {isa = PBXBuildFile; fileRef = 10B56CC7B3A358870B3AA3F1 /* PlaceholderPage.swift */; };
+		173ED01886488B4343743207 /* SettingsPages.swift in Sources */ = {isa = PBXBuildFile; fileRef = 10B56CC7B3A358870B3AA3F1 /* SettingsPages.swift */; };
 		2DA897BB57F7776D90D45DD1 /* CpapMaskGuardApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0B2B43C8F108D974949D6C92 /* CpapMaskGuardApp.swift */; };
 		36F98B27B0DBAE74E3A87533 /* MainScreenUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 392AAB29AE5FB465BA00CD59 /* MainScreenUITests.swift */; };
 		3DC7F5B86654DEB8EFF53B75 /* RootView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6D72515D71852295B3610D17 /* RootView.swift */; };
@@ -32,7 +32,7 @@
 
 /* Begin PBXFileReference section */
 		0B2B43C8F108D974949D6C92 /* CpapMaskGuardApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CpapMaskGuardApp.swift; sourceTree = "<group>"; };
-		10B56CC7B3A358870B3AA3F1 /* PlaceholderPage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlaceholderPage.swift; sourceTree = "<group>"; };
+		10B56CC7B3A358870B3AA3F1 /* SettingsPages.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsPages.swift; sourceTree = "<group>"; };
 		15CC62817618B16513F2C3D5 /* SettingsPanel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsPanel.swift; sourceTree = "<group>"; };
 		392AAB29AE5FB465BA00CD59 /* MainScreenUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MainScreenUITests.swift; sourceTree = "<group>"; };
 		3E1369DE5B4C44A7D60B0531 /* L10n.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = L10n.swift; sourceTree = "<group>"; };
@@ -84,7 +84,7 @@
 				0B2B43C8F108D974949D6C92 /* CpapMaskGuardApp.swift */,
 				D9F5E2D0D2BA8D5674ACB935 /* GuardModel.swift */,
 				3E1369DE5B4C44A7D60B0531 /* L10n.swift */,
-				10B56CC7B3A358870B3AA3F1 /* PlaceholderPage.swift */,
+				10B56CC7B3A358870B3AA3F1 /* SettingsPages.swift */,
 				6A08A01C3211E141ED38B87C /* RearTorch.swift */,
 				6D72515D71852295B3610D17 /* RootView.swift */,
 				15CC62817618B16513F2C3D5 /* SettingsPanel.swift */,
@@ -209,7 +209,7 @@
 				2DA897BB57F7776D90D45DD1 /* CpapMaskGuardApp.swift in Sources */,
 				AFE04D1A8CD0175B2563140B /* GuardModel.swift in Sources */,
 				5637D8326A013390202699AD /* L10n.swift in Sources */,
-				173ED01886488B4343743207 /* PlaceholderPage.swift in Sources */,
+				173ED01886488B4343743207 /* SettingsPages.swift in Sources */,
 				BF1294F354B28F409E77CC2C /* RearTorch.swift in Sources */,
 				3DC7F5B86654DEB8EFF53B75 /* RootView.swift in Sources */,
 				B8B246EF09F655F093CB404C /* SettingsPanel.swift in Sources */,
@@ -399,7 +399,7 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1;
+				CURRENT_PROJECT_VERSION = 2;
 				DEVELOPMENT_TEAM = H45MTM24C4;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = NO;
@@ -408,7 +408,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 0.3.7;
+				MARKETING_VERSION = 0.3.8;
 				PRODUCT_BUNDLE_IDENTIFIER = app.cpapmaskguard;
 				PRODUCT_NAME = CpapMaskGuard;
 				SDKROOT = iphoneos;
@@ -425,7 +425,7 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1;
+				CURRENT_PROJECT_VERSION = 2;
 				DEVELOPMENT_TEAM = H45MTM24C4;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = NO;
@@ -434,7 +434,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 0.3.7;
+				MARKETING_VERSION = 0.3.8;
 				PRODUCT_BUNDLE_IDENTIFIER = app.cpapmaskguard;
 				PRODUCT_NAME = CpapMaskGuard;
 				SDKROOT = iphoneos;

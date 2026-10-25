@@ -19,6 +19,8 @@ final class GuardModel: ObservableObject {
     @Published var notificationNote: String?
     @Published var busy = false
     @Published var whiteScreenActive = false
+    /// This launch only. Not a file, so an empty path cannot crash the log screen.
+    @Published private(set) var logs: [SessionLogLine] = []
 
     private let torch = RearTorch()
     private var savedBrightness: CGFloat?
@@ -33,6 +35,16 @@ final class GuardModel: ObservableObject {
         screenBrightness = min(max(brightness, 0.05), 1)
         let level = defaults.object(forKey: Key.torchLevel) as? Double ?? 0.15
         torchLevel = min(max(level, 0.05), 1)
+        logs = [SessionLogLine(id: UUID(), date: Date(), text: L10n(language: language).logOpened)]
+    }
+
+    func record(_ text: String) {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+        logs.append(SessionLogLine(id: UUID(), date: Date(), text: trimmed))
+        if logs.count > 200 {
+            logs.removeFirst(logs.count - 200)
+        }
     }
 
     var l10n: L10n { L10n(language: language) }
@@ -46,6 +58,7 @@ final class GuardModel: ObservableObject {
     }
 
     func setFillMode(_ mode: FillLightMode) async {
+        let changed = fillMode != mode
         fillMode = mode
         persist()
         if mode == .frontScreen {
@@ -62,6 +75,9 @@ final class GuardModel: ObservableObject {
         } else {
             endWhiteScreen()
             await lightsOffTorch()
+        }
+        if changed {
+            record(l10n.logFill(mode))
         }
     }
 
@@ -84,6 +100,7 @@ final class GuardModel: ObservableObject {
         } else {
             await lightsOffTorch()
         }
+        record(torchHardwareOn ? l10n.logTorchOn(torchStatus) : l10n.logTorchOff)
     }
 
     func setTorchLevel(_ value: Double) {
@@ -104,6 +121,7 @@ final class GuardModel: ObservableObject {
         guard token == transition, isForeground else { return }
         guard allowed else {
             phase = .idle
+            record(l10n.logCameraDenied)
             return
         }
         permissionNote = nil
@@ -114,6 +132,7 @@ final class GuardModel: ObservableObject {
             await lightsOffTorch()
             guard token == transition, isForeground else { return }
             beginWhiteScreen()
+            record(l10n.logStarted)
         } else {
             endWhiteScreen()
             if torchEnabled {
@@ -124,6 +143,10 @@ final class GuardModel: ObservableObject {
             guard token == transition, isForeground else {
                 await leaveForeground()
                 return
+            }
+            record(l10n.logStarted)
+            if torchEnabled {
+                record(torchHardwareOn ? l10n.logTorchOn(torchStatus) : l10n.logTorchOff)
             }
         }
     }
@@ -138,6 +161,7 @@ final class GuardModel: ObservableObject {
         UIApplication.shared.isIdleTimerDisabled = false
         endWhiteScreen()
         await lightsOffTorch()
+        record(l10n.logStopped)
     }
 
     func leaveForeground() async {
@@ -149,19 +173,23 @@ final class GuardModel: ObservableObject {
         UIApplication.shared.isIdleTimerDisabled = false
         endWhiteScreen()
         await lightsOffTorch()
+        record(l10n.logLeft)
     }
 
     func requestMicrophone() async {
         let ok = await AVCaptureDevice.requestAccess(for: .audio)
         micNote = ok ? l10n.micGranted : l10n.micDenied
+        record(l10n.logMic(ok))
     }
 
     func requestNotifications() async {
         do {
             let ok = try await UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound])
             notificationNote = ok ? l10n.notifyGranted : l10n.notifyDenied
+            record(l10n.logNotify(ok))
         } catch {
             notificationNote = error.localizedDescription
+            record(l10n.logNotifyFailed(error.localizedDescription))
         }
     }
 
@@ -249,4 +277,10 @@ final class GuardModel: ObservableObject {
         static let brightness = "guard.screenBrightness"
         static let torchLevel = "guard.torchLevel"
     }
+}
+
+struct SessionLogLine: Identifiable, Equatable {
+    let id: UUID
+    let date: Date
+    let text: String
 }
