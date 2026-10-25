@@ -40,7 +40,7 @@ struct RootView: View {
                 // Home-only `.environmentObject` does not reach a pushed screen.
                 // PlaceholderPage.title crashed in EnvironmentObject.error()
                 // because of that. Inject GuardModel on the destination itself.
-                SettingsRouteScreen(route: route, model: model)
+                SettingsRouteScreen(model: model, route: route)
                     .environmentObject(model)
             }
         }
