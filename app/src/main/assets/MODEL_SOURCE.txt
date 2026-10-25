@@ -1,0 +1,5 @@
+Source: MediaPipe model zoo — Image Embedder MobileNet V3 Small float32
+URL: https://storage.googleapis.com/mediapipe-models/image_embedder/mobilenet_v3_small/float32/1/mobilenet_v3_small.tflite
+Also: .../float32/latest/mobilenet_v3_small.tflite
+License: Apache-2.0 (MediaPipe / TensorFlow)
+Input: typically 224x224 RGB; output: embedding vector (used via TFLite Interpreter or Task Vision ImageEmbedder)
