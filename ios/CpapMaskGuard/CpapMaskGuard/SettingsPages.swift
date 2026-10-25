@@ -262,11 +262,24 @@ enum SessionLogClock {
         formatter.string(from: date)
     }
 
+    /// Capture clock with milliseconds, same shape as the Android monitor log.
+    static func precise(from date: Date) -> String {
+        preciseFormatter.string(from: date)
+    }
+
     private static let formatter: DateFormatter = {
         let formatter = DateFormatter()
         formatter.locale = Locale(identifier: "en_US_POSIX")
         formatter.timeZone = .current
         formatter.dateFormat = "HH:mm:ss"
+        return formatter
+    }()
+
+    private static let preciseFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.timeZone = .current
+        formatter.dateFormat = "HH:mm:ss.SSS"
         return formatter
     }()
 }

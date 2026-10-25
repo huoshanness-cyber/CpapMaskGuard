@@ -803,3 +803,9 @@ final class GuardModel: ObservableObject {
         static let interval = "guard.intervalSeconds"
     }
 }
+
+struct SessionLogLine: Identifiable, Equatable {
+    let id: UUID
+    let date: Date
+    let text: String
+}
