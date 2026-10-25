@@ -1,0 +1,70 @@
+name: CpapMaskGuard
+options:
+  createIntermediateGroups: true
+  groupSortPosition: top
+  deploymentTarget:
+    iOS: "17.0"
+configs:
+  Debug: debug
+  Release: release
+configFiles:
+  Debug: Config/Debug.xcconfig
+  Release: Config/Release.xcconfig
+settings:
+  base:
+    SWIFT_VERSION: "5.0"
+    TARGETED_DEVICE_FAMILY: "1"
+targets:
+  CpapMaskGuard:
+    type: application
+    platform: iOS
+    sources:
+      - path: CpapMaskGuard
+        excludes:
+          - Info.plist
+          - "**/.DS_Store"
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: app.cpapmaskguard
+        PRODUCT_NAME: CpapMaskGuard
+        MARKETING_VERSION: "0.3.7"
+        CURRENT_PROJECT_VERSION: "1"
+        INFOPLIST_FILE: CpapMaskGuard/Info.plist
+        GENERATE_INFOPLIST_FILE: NO
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        ENABLE_PREVIEWS: YES
+        SWIFT_STRICT_CONCURRENCY: minimal
+        CODE_SIGN_STYLE: Automatic
+        DEVELOPMENT_TEAM: H45MTM24C4
+        TARGETED_DEVICE_FAMILY: "1"
+        SUPPORTS_MACCATALYST: NO
+        SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD: NO
+  CpapMaskGuardUITests:
+    type: bundle.ui-testing
+    platform: iOS
+    sources:
+      - path: CpapMaskGuardUITests
+    dependencies:
+      - target: CpapMaskGuard
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: app.cpapmaskguard.uitests
+        PRODUCT_NAME: CpapMaskGuardUITests
+        PRODUCT_MODULE_NAME: CpapMaskGuardUITests
+        GENERATE_INFOPLIST_FILE: YES
+        CODE_SIGN_STYLE: Automatic
+        DEVELOPMENT_TEAM: H45MTM24C4
+        TARGETED_DEVICE_FAMILY: "1"
+schemes:
+  CpapMaskGuard:
+    build:
+      targets:
+        CpapMaskGuard: all
+        CpapMaskGuardUITests: [test]
+    run:
+      config: Debug
+    test:
+      config: Debug
+      gatherCoverageData: false
+      targets:
+        - CpapMaskGuardUITests
