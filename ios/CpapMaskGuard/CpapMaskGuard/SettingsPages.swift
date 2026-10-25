@@ -77,6 +77,25 @@ private struct DeviceStatusPage: View {
                 row(model.l10n.rowCamera, cameraAccess)
                 row(model.l10n.rowDevice, deviceLine)
                 row(model.l10n.rowBattery, batteryLine)
+                row(model.l10n.rowHealth, model.health.map { "\($0.score)" } ?? model.l10n.healthPending)
+                if let health = model.health {
+                    Text(health.reason)
+                        .font(.subheadline)
+                        .foregroundStyle(GuardTheme.muted)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                row(model.l10n.rowInterval, "\(model.intervalSeconds)s")
+                row(model.l10n.rowLastResult, model.lastReadout == nil ? model.l10n.valueUnknown : model.displayResult)
+                row(
+                    model.l10n.rowCaptureTime,
+                    model.lastReadout.map { SessionLogClock.precise(from: $0.capturedAt) } ?? model.l10n.valueUnknown
+                )
+                row(
+                    model.l10n.rowLatency,
+                    model.lastReadout.map { model.l10n.latencyLine($0) } ?? model.l10n.valueUnknown
+                )
+                row(model.l10n.rowSnore, model.snoreHint.isEmpty ? model.l10n.valueUnknown : model.snoreHint)
+                row(model.l10n.rowKey, AppSecrets.hasMinimaxKey ? model.l10n.keyYes : model.l10n.keyNo)
             }
         }
         .onAppear(perform: readBattery)
@@ -130,17 +149,77 @@ private struct DeviceStatusPage: View {
     }
 }
 
-/// Sample photos are not captured in this build. No capture session is started.
+/// Local sample frames. Opening the page does not start a camera.
+/// The explicit button takes one foreground still, then closes the session.
 private struct BaselinePhotosPage: View {
     @ObservedObject var model: GuardModel
+    @State private var items: [ArchiveItem] = []
 
     var body: some View {
         SettingsPageChrome(title: model.l10n.calibrateTitle, footnote: model.l10n.foregroundLimit) {
-            Text(model.l10n.baselineComingSoon)
+            Text(model.phase == .guarding ? model.l10n.sampleWhileGuarding : model.l10n.baselineComingSoon)
                 .font(.body)
                 .foregroundStyle(GuardTheme.text)
                 .fixedSize(horizontal: false, vertical: true)
+            Button(model.l10n.refreshSamples) {
+                reload()
+            }
+            .buttonStyle(.bordered)
+            .tint(GuardTheme.accent)
+            if model.phase != .guarding {
+                Button(model.l10n.captureSample) {
+                    Task {
+                        await model.captureSample()
+                        reload()
+                    }
+                }
+                .buttonStyle(.borderedProminent)
+                .tint(GuardTheme.accent)
+                .disabled(model.busy)
+            }
+            if let note = model.sampleNote, !note.isEmpty {
+                Text(note)
+                    .font(.subheadline)
+                    .foregroundStyle(GuardTheme.muted)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            if items.isEmpty {
+                Text(model.l10n.samplesEmpty)
+                    .font(.body)
+                    .foregroundStyle(GuardTheme.muted)
+            } else {
+                VStack(alignment: .leading, spacing: 14) {
+                    ForEach(items) { item in
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text(SessionLogClock.precise(from: item.capturedAt))
+                                .font(.caption.monospacedDigit())
+                                .foregroundStyle(GuardTheme.muted)
+                            Text(item.result)
+                                .font(.body.weight(.semibold))
+                                .foregroundStyle(GuardTheme.text)
+                            if let latency = item.latencyMs {
+                                Text(model.l10n.pair(model.l10n.rowLatency, "\(latency)ms"))
+                                    .font(.footnote)
+                                    .foregroundStyle(GuardTheme.muted)
+                            }
+                            if let jpeg = item.jpeg, let image = UIImage(data: jpeg) {
+                                Image(uiImage: image)
+                                    .resizable()
+                                    .scaledToFit()
+                                    .frame(maxWidth: .infinity, maxHeight: 160)
+                                    .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                            }
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                }
+            }
         }
+        .onAppear(perform: reload)
+    }
+
+    private func reload() {
+        items = FrameArchive.list()
     }
 }
 
@@ -183,11 +262,24 @@ enum SessionLogClock {
         formatter.string(from: date)
     }
 
+    /// Capture clock with milliseconds, same shape as the Android monitor log.
+    static func precise(from date: Date) -> String {
+        preciseFormatter.string(from: date)
+    }
+
     private static let formatter: DateFormatter = {
         let formatter = DateFormatter()
         formatter.locale = Locale(identifier: "en_US_POSIX")
         formatter.timeZone = .current
         formatter.dateFormat = "HH:mm:ss"
+        return formatter
+    }()
+
+    private static let preciseFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.timeZone = .current
+        formatter.dateFormat = "HH:mm:ss.SSS"
         return formatter
     }()
 }

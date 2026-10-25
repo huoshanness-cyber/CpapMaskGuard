@@ -13,6 +13,7 @@ struct RootView: View {
                     VStack(alignment: .leading, spacing: 18) {
                         header
                         statusBlock
+                        captureCard
                         notices
                         heroButton
                         Text(model.l10n.foregroundLimit)
@@ -46,6 +47,11 @@ struct RootView: View {
         }
         .environmentObject(model)
         .preferredColorScheme(model.whiteScreenActive ? .light : .dark)
+        .overlay(alignment: .bottom) {
+            if model.alarming {
+                alarmBar
+            }
+        }
         .onChange(of: scenePhase) { _, phase in
             guard phase == .background else { return }
             Task { await model.leaveForeground() }
@@ -99,13 +105,101 @@ struct RootView: View {
     }
 
     @ViewBuilder
+    private var captureCard: some View {
+        if model.phase == .guarding || model.lastReadout != nil {
+            VStack(alignment: .leading, spacing: 6) {
+                Text(model.l10n.lastCaptureTitle)
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(foregroundMuted)
+                if let readout = model.lastReadout {
+                    labeled(model.l10n.capturedLabel, SessionLogClock.precise(from: readout.capturedAt))
+                        .accessibilityIdentifier("home.capture.time")
+                    labeled(model.l10n.resultWord, model.displayResult)
+                        .accessibilityIdentifier("home.capture.result")
+                    Text(model.l10n.latencyLine(readout))
+                        .font(.subheadline.monospacedDigit())
+                        .foregroundStyle(foregroundText)
+                        .accessibilityIdentifier("home.capture.latency")
+                    if model.phase == .guarding, !model.displayReason.isEmpty {
+                        Text(model.displayReason)
+                            .font(.footnote)
+                            .foregroundStyle(foregroundMuted)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                } else {
+                    Text(model.l10n.takingFirst)
+                        .font(.body)
+                        .foregroundStyle(foregroundText)
+                }
+                if model.phase == .guarding {
+                    Text(model.snoreHint)
+                        .font(.footnote)
+                        .foregroundStyle(foregroundMuted)
+                    Text(model.l10n.uploadNote(hasKey: AppSecrets.hasMinimaxKey))
+                        .font(.footnote)
+                        .foregroundStyle(foregroundMuted)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                if let image = model.lastThumbnail {
+                    Image(uiImage: image)
+                        .resizable()
+                        .scaledToFit()
+                        .frame(maxWidth: .infinity, maxHeight: 180)
+                        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                }
+            }
+            .padding(14)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(model.whiteScreenActive ? Color.black.opacity(0.04) : GuardTheme.surface)
+            .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+        }
+    }
+
+    private func labeled(_ label: String, _ value: String) -> some View {
+        Text(model.l10n.pair(label, value))
+            .font(.body.monospacedDigit())
+            .foregroundStyle(foregroundText)
+            .fixedSize(horizontal: false, vertical: true)
+    }
+
+    @ViewBuilder
     private var notices: some View {
         if let note = model.permissionNote {
+            notice(note)
+        }
+        if let note = model.roundNote {
+            notice(note)
+        }
+        if let note = model.volumeWarning {
             notice(note)
         }
         if let err = model.torchError, model.fillMode == .rearAmbient {
             notice(err)
         }
+    }
+
+    private var alarmBar: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text(model.headline)
+                .font(.title2.weight(.bold))
+                .foregroundStyle(.white)
+            Button {
+                model.acknowledgeAlarm()
+            } label: {
+                Text(model.l10n.stopSound)
+                    .font(.title3.weight(.bold))
+                    .foregroundStyle(GuardTheme.ink)
+                    .frame(maxWidth: .infinity)
+                    .frame(minHeight: 56)
+            }
+            .buttonStyle(.borderedProminent)
+            .tint(.white)
+        }
+        .padding(16)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Color(red: 0.55, green: 0.09, blue: 0.09))
+        .padding(.horizontal, 12)
+        .padding(.bottom, 8)
     }
 
     private func notice(_ text: String) -> some View {
