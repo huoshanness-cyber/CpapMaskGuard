@@ -8,4 +8,5 @@ CODE_SIGN_STYLE = Automatic
 DEVELOPMENT_TEAM = H45MTM24C4
 
 MINIMAX_API_KEY =
+MINIMAX_ENDPOINT = https://api.minimax.cn/v1/chat/completions
 #include? "Secrets.xcconfig"

@@ -14,7 +14,7 @@ enum MiniMaxError: Error {
 /// Same body as Android `MiniMaxCloudMaskDetector`: MiniMax-M3, thinking disabled,
 /// image detail low, max 64 completion tokens, temperature 0.1.
 enum MiniMaxClient {
-    static let endpoint = URL(string: "https://api.minimax.cn/v1/chat/completions")!
+    static let defaultEndpoint = URL(string: "https://api.minimax.cn/v1/chat/completions")!
     static let model = "MiniMax-M3"
     static let prompt = """
     You classify one night-camera still for a CPAP/BiPAP mask alarm.
@@ -25,7 +25,11 @@ enum MiniMaxClient {
     UNCERTAIN — cannot tell (blurry, extreme angle, ambiguous)
     """
 
-    static func classify(jpeg: Data, apiKey: String) async throws -> CloudClassification {
+    static func classify(
+        jpeg: Data,
+        apiKey: String,
+        endpoint: URL = defaultEndpoint
+    ) async throws -> CloudClassification {
         let key = apiKey.trimmingCharacters(in: .whitespacesAndNewlines)
         if key.isEmpty || key.contains("$(") {
             throw MiniMaxError.missingKey

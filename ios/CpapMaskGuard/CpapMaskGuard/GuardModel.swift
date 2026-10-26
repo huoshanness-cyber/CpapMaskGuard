@@ -13,6 +13,8 @@ struct CaptureReadout: Equatable {
     var inferMs: Int
     var captureToJudgeMs: Int
     var roundMs: Int
+    var aimMissed: Bool = false
+    var cloudPaused: Bool = false
 }
 
 @MainActor
@@ -41,8 +43,11 @@ final class GuardModel: ObservableObject {
     @Published var snoreHint = ""
     @Published var health: HealthSnapshot?
     @Published private(set) var logs: [SessionLogLine] = []
+    @Published var uploadEnabled = true
+    @Published var resumeRemaining = CloudUploadPolicy.dailyResumeLimit
 
     private let torch = RearTorch()
+    private let cloudMemory = CloudUploadMemory()
     private let capture = FrameCapture()
     private let night = NightAudio()
     private let debouncer = Debouncer()
@@ -68,6 +73,9 @@ final class GuardModel: ObservableObject {
         intervalSeconds = min(max(storedInterval, 5), 10)
         logs = [SessionLogLine(id: UUID(), date: Date(), text: L10n(language: language).logOpened)]
         snoreHint = L10n(language: language).snoreLine(.off)
+        let stored = cloudMemory.load(now: Date())
+        uploadEnabled = stored.uploadEnabled
+        resumeRemaining = CloudUploadPolicy.remaining(stored)
     }
 
     func record(_ text: String) {
@@ -84,12 +92,16 @@ final class GuardModel: ObservableObject {
 
     var displayResult: String {
         guard let lastReadout else { return "" }
+        if lastReadout.aimMissed { return l10n.aimSoftResult }
+        if lastReadout.cloudPaused && !lastReadout.alarmed && !alarming { return l10n.pausedResult }
         if lastReadout.unjudged { return l10n.unjudged }
-        return l10n.resultLabel(lastReadout.vote ?? .uncertain, alarmed: lastReadout.alarmed)
+        return l10n.resultLabel(lastReadout.vote ?? .uncertain, alarmed: lastReadout.alarmed || alarming)
     }
 
     var displayReason: String {
         guard let lastReadout else { return "" }
+        if lastReadout.aimMissed { return l10n.aimSoftHint }
+        if lastReadout.cloudPaused { return l10n.pausedReason }
         if lastReadout.unjudged { return l10n.noKeyReason }
         return l10n.cloudReason(lastReadout.vote ?? .uncertain, raw: lastReadout.raw)
     }
@@ -100,7 +112,8 @@ final class GuardModel: ObservableObject {
             alarming: alarming,
             failures: consecutiveFailures,
             vote: lastReadout?.vote,
-            unjudged: lastReadout?.unjudged ?? false
+            unjudged: lastReadout?.unjudged ?? false,
+            aimMissed: lastReadout?.aimMissed ?? false
         )
     }
 
@@ -311,6 +324,23 @@ final class GuardModel: ObservableObject {
         }
     }
 
+    func resumeUpload() {
+        switch cloudMemory.resume(now: Date()) {
+        case .accepted(let state):
+            publishCloud(state)
+            let text = l10n.resumeAccepted(CloudUploadPolicy.remaining(state))
+            roundNote = text
+            record(text)
+        case .denied(let state):
+            publishCloud(state)
+            roundNote = l10n.resumeExhausted
+            record(l10n.resumeExhausted)
+        case .alreadyOn(let state):
+            publishCloud(state)
+            roundNote = l10n.resumeAlready
+        }
+    }
+
     func acknowledgeAlarm() {
         guard alarming else { return }
         alarming = false
@@ -358,14 +388,34 @@ final class GuardModel: ObservableObject {
             var vote = "SAMPLE"
             var latency = 0
             var reason = l10n.sampleUnjudgedReason
-            if AppSecrets.hasMinimaxKey {
+            let aimed = await aimIsValid(payload)
+            if !aimed {
+                result = l10n.aimSoftResult
+                vote = "AIM_MISS"
+                reason = l10n.aimSoftHint
+                _ = cloudMemory.noteAimInvalid(now: Date())
+                publishCloud(cloudMemory.load(now: Date()))
+            } else if AppSecrets.hasMinimaxKey && !cloudMemory.load(now: Date()).uploadEnabled {
+                result = l10n.pausedResult
+                vote = "CLOUD_PAUSED"
+                reason = l10n.pausedReason
+            } else if AppSecrets.hasMinimaxKey {
                 do {
                     let started = Date()
-                    let classified = try await MiniMaxClient.classify(jpeg: payload, apiKey: AppSecrets.minimaxAPIKey)
+                    let classified = try await MiniMaxClient.classify(
+                        jpeg: payload,
+                        apiKey: AppSecrets.minimaxAPIKey,
+                        endpoint: AppSecrets.minimaxEndpoint
+                    )
                     latency = MonitorClock.milliseconds(since: started)
+                    let updated = cloudMemory.noteCloud(classified.vote, now: Date())
+                    publishCloud(updated)
                     result = l10n.resultLabel(classified.vote, alarmed: false)
                     vote = classified.vote.rawValue
                     reason = l10n.cloudReason(classified.vote, raw: classified.raw)
+                    if !updated.uploadEnabled {
+                        record(l10n.uploadStopped(updated.consecutiveMaskOff, CloudUploadPolicy.remaining(updated)))
+                    }
                 } catch {
                     reason = l10n.failureMessage(error)
                 }
@@ -441,12 +491,29 @@ final class GuardModel: ObservableObject {
                 guard let payload = ImageEncode.jpegForCloud(raw) else {
                     throw CaptureError.empty
                 }
-                if !AppSecrets.hasMinimaxKey {
+                let aimed = await aimIsValid(payload)
+                guard stillGuarding(token) else { return }
+                if !aimed {
+                    let updated = cloudMemory.noteAimInvalid(now: capturedAt)
+                    publishCloud(updated)
+                    publishAimMiss(payload: payload, capturedAt: capturedAt, started: started)
+                } else if !AppSecrets.hasMinimaxKey {
                     publishUnjudged(payload: payload, capturedAt: capturedAt, started: started)
+                } else if !cloudMemory.load(now: capturedAt).uploadEnabled {
+                    publishCloudPaused(payload: payload, capturedAt: capturedAt, started: started)
                 } else {
                     let classifyStarted = Date()
-                    let classified = try await MiniMaxClient.classify(jpeg: payload, apiKey: AppSecrets.minimaxAPIKey)
+                    let classified = try await MiniMaxClient.classify(
+                        jpeg: payload,
+                        apiKey: AppSecrets.minimaxAPIKey,
+                        endpoint: AppSecrets.minimaxEndpoint
+                    )
                     guard stillGuarding(token) else { return }
+                    let updated = cloudMemory.noteCloud(classified.vote, now: capturedAt)
+                    publishCloud(updated)
+                    if !updated.uploadEnabled {
+                        record(l10n.uploadStopped(updated.consecutiveMaskOff, CloudUploadPolicy.remaining(updated)))
+                    }
                     publishClassified(
                         classified,
                         jpeg: payload,
@@ -475,6 +542,104 @@ final class GuardModel: ObservableObject {
                 left -= slice
             }
         }
+    }
+
+    private func aimIsValid(_ jpeg: Data) async -> Bool {
+        guard let image = UIImage(data: jpeg)?.cgImage else { return false }
+        return await withCheckedContinuation { continuation in
+            DispatchQueue.global(qos: .userInitiated).async {
+                continuation.resume(returning: AimScanner.evaluate(image).valid)
+            }
+        }
+    }
+
+    private func publishCloud(_ state: CloudUploadState) {
+        uploadEnabled = state.uploadEnabled
+        resumeRemaining = CloudUploadPolicy.remaining(state)
+    }
+
+    private func publishAimMiss(payload: Data, capturedAt: Date, started: Date) {
+        let roundMs = MonitorClock.milliseconds(since: started)
+        lastReadout = CaptureReadout(
+            capturedAt: capturedAt,
+            vote: .uncertain,
+            raw: "",
+            alarmed: false,
+            unjudged: false,
+            inferMs: 0,
+            captureToJudgeMs: roundMs,
+            roundMs: roundMs,
+            aimMissed: true
+        )
+        lastThumbnail = UIImage(data: payload)
+        roundNote = l10n.aimSoftHint
+        consecutiveFailures = 0
+        health = HealthMath.score(
+            captureToJudgeMs: roundMs,
+            roundMs: roundMs,
+            consecutiveFailures: 0,
+            language: language
+        )
+        let line = l10n.logRound(
+            time: SessionLogClock.precise(from: capturedAt),
+            result: l10n.aimSoftResult,
+            inferMs: 0,
+            captureToJudgeMs: roundMs,
+            roundMs: roundMs
+        )
+        record(line)
+        FrameArchive.save(ArchivePayload(
+            capturedAt: capturedAt,
+            result: l10n.aimSoftResult,
+            vote: "AIM_MISS",
+            latencyMs: 0,
+            roundMs: roundMs,
+            fillMode: fillMode.rawValue,
+            reason: l10n.aimSoftHint,
+            jpeg: payload
+        ))
+        maybeAudioOnlyAlarm()
+    }
+
+    private func publishCloudPaused(payload: Data, capturedAt: Date, started: Date) {
+        let state = cloudMemory.load(now: capturedAt)
+        let hold = state.lastCloudWasMaskOff
+        let roundMs = MonitorClock.milliseconds(since: started)
+        lastReadout = CaptureReadout(
+            capturedAt: capturedAt,
+            vote: hold ? .maskOff : .uncertain,
+            raw: "",
+            alarmed: hold,
+            unjudged: false,
+            inferMs: 0,
+            captureToJudgeMs: roundMs,
+            roundMs: roundMs,
+            cloudPaused: true
+        )
+        lastThumbnail = UIImage(data: payload)
+        roundNote = nil
+        consecutiveFailures = 0
+        let result = hold ? l10n.resultLabel(.maskOff, alarmed: true) : l10n.pausedResult
+        let line = l10n.logRound(
+            time: SessionLogClock.precise(from: capturedAt),
+            result: result,
+            inferMs: 0,
+            captureToJudgeMs: roundMs,
+            roundMs: roundMs
+        )
+        record(line)
+        FrameArchive.save(ArchivePayload(
+            capturedAt: capturedAt,
+            result: result,
+            vote: hold ? FrameVote.maskOff.rawValue : "CLOUD_PAUSED",
+            latencyMs: 0,
+            roundMs: roundMs,
+            fillMode: fillMode.rawValue,
+            reason: hold ? l10n.pausedAlarm : l10n.pausedReason,
+            jpeg: payload
+        ))
+        guard hold else { return }
+        beginAlarm(summary: l10n.pausedAlarm)
     }
 
     private func publishClassified(

@@ -16,6 +16,7 @@ struct RootView: View {
                         captureCard
                         notices
                         heroButton
+                        resumeUploads
                         Text(model.l10n.foregroundLimit)
                             .font(.footnote)
                             .foregroundStyle(foregroundMuted)
@@ -232,6 +233,29 @@ struct RootView: View {
         .opacity(model.busy ? 0.55 : 1)
         .padding(.top, 8)
         .accessibilityHint(model.l10n.foregroundLimit)
+    }
+
+    @ViewBuilder
+    private var resumeUploads: some View {
+        if !model.uploadEnabled && AppSecrets.hasMinimaxKey {
+            VStack(alignment: .leading, spacing: 8) {
+                Text(model.resumeRemaining == 0 ? model.l10n.resumeExhausted : model.l10n.resumeRemaining(model.resumeRemaining))
+                    .font(.subheadline)
+                    .foregroundStyle(foregroundMuted)
+                    .fixedSize(horizontal: false, vertical: true)
+                Button {
+                    model.resumeUpload()
+                } label: {
+                    Text(model.l10n.resumeUpload)
+                        .font(.body.weight(.semibold))
+                        .frame(maxWidth: .infinity)
+                        .frame(minHeight: 48)
+                }
+                .buttonStyle(.bordered)
+                .disabled(model.resumeRemaining == 0 || model.busy)
+                .accessibilityIdentifier("home.resumeUpload")
+            }
+        }
     }
 }
 

@@ -1,4 +1,6 @@
+import CoreGraphics
 import Foundation
+import Vision
 
 /// Cloud / fusion votes. Same labels as the Android MiniMax prompt.
 enum FrameVote: String, Equatable {
@@ -292,6 +294,295 @@ enum HealthMath {
         if a == b { return ya }
         let t = (x - a) / (b - a)
         return ya + (yb - ya) * t
+    }
+}
+
+/// Same rules as Android `CloudUploadPolicy`: 10 cloud MASK_OFF results stop uploads,
+/// 10 manual resumes per Asia/Shanghai calendar day. An aim miss does not touch the streak.
+struct CloudUploadState: Equatable {
+    var consecutiveMaskOff: Int = 0
+    var uploadEnabled: Bool = true
+    var resumesUsed: Int = 0
+    var resumeDay: String = ""
+    var lastCloudWasMaskOff: Bool = false
+}
+
+enum CloudResume {
+    case accepted(CloudUploadState)
+    case denied(CloudUploadState)
+    case alreadyOn(CloudUploadState)
+
+    var state: CloudUploadState {
+        switch self {
+        case .accepted(let state), .denied(let state), .alreadyOn(let state):
+            return state
+        }
+    }
+}
+
+enum CloudUploadPolicy {
+    static let maskOffStop = 10
+    static let dailyResumeLimit = 10
+
+    static func remaining(_ state: CloudUploadState) -> Int {
+        max(0, dailyResumeLimit - state.resumesUsed)
+    }
+
+    static func dayKey(_ date: Date) -> String {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(identifier: "Asia/Shanghai") ?? TimeZone(secondsFromGMT: 8 * 3600)!
+        let parts = calendar.dateComponents([.year, .month, .day], from: date)
+        return String(format: "%04d-%02d-%02d", parts.year ?? 0, parts.month ?? 0, parts.day ?? 0)
+    }
+
+    static func roll(_ state: CloudUploadState, now: Date) -> CloudUploadState {
+        let today = dayKey(now)
+        if state.resumeDay == today { return state }
+        var copy = state
+        copy.resumeDay = today
+        copy.resumesUsed = 0
+        return copy
+    }
+
+    static func onAimInvalid(_ state: CloudUploadState, now: Date) -> CloudUploadState {
+        roll(state, now: now)
+    }
+
+    static func onCloudVote(_ state: CloudUploadState, vote: FrameVote, now: Date) -> CloudUploadState {
+        var rolled = roll(state, now: now)
+        if !rolled.uploadEnabled { return rolled }
+        if vote != .maskOff {
+            rolled.consecutiveMaskOff = 0
+            rolled.lastCloudWasMaskOff = false
+            return rolled
+        }
+        rolled.consecutiveMaskOff += 1
+        rolled.lastCloudWasMaskOff = true
+        if rolled.consecutiveMaskOff >= maskOffStop {
+            rolled.uploadEnabled = false
+        }
+        return rolled
+    }
+
+    static func resume(_ state: CloudUploadState, now: Date) -> CloudResume {
+        var rolled = roll(state, now: now)
+        if rolled.uploadEnabled { return .alreadyOn(rolled) }
+        if rolled.resumesUsed >= dailyResumeLimit { return .denied(rolled) }
+        rolled.uploadEnabled = true
+        rolled.consecutiveMaskOff = 0
+        rolled.lastCloudWasMaskOff = false
+        rolled.resumesUsed += 1
+        return .accepted(rolled)
+    }
+}
+
+final class CloudUploadMemory {
+    private let defaults: UserDefaults
+
+    init(defaults: UserDefaults = .standard) {
+        self.defaults = defaults
+    }
+
+    func load(now: Date) -> CloudUploadState {
+        let raw = read()
+        let rolled = CloudUploadPolicy.roll(raw, now: now)
+        if rolled != raw { write(rolled) }
+        return rolled
+    }
+
+    func noteAimInvalid(now: Date) -> CloudUploadState {
+        let next = CloudUploadPolicy.onAimInvalid(load(now: now), now: now)
+        write(next)
+        return next
+    }
+
+    func noteCloud(_ vote: FrameVote, now: Date) -> CloudUploadState {
+        let next = CloudUploadPolicy.onCloudVote(load(now: now), vote: vote, now: now)
+        write(next)
+        return next
+    }
+
+    func resume(now: Date) -> CloudResume {
+        let outcome = CloudUploadPolicy.resume(load(now: now), now: now)
+        write(outcome.state)
+        return outcome
+    }
+
+    private func read() -> CloudUploadState {
+        let enabled: Bool
+        if defaults.object(forKey: Key.enabled) == nil {
+            enabled = true
+        } else {
+            enabled = defaults.bool(forKey: Key.enabled)
+        }
+        return CloudUploadState(
+            consecutiveMaskOff: max(0, defaults.integer(forKey: Key.streak)),
+            uploadEnabled: enabled,
+            resumesUsed: max(0, defaults.integer(forKey: Key.resumes)),
+            resumeDay: defaults.string(forKey: Key.day) ?? "",
+            lastCloudWasMaskOff: defaults.bool(forKey: Key.lastOff)
+        )
+    }
+
+    private func write(_ state: CloudUploadState) {
+        defaults.set(state.consecutiveMaskOff, forKey: Key.streak)
+        defaults.set(state.uploadEnabled, forKey: Key.enabled)
+        defaults.set(state.resumesUsed, forKey: Key.resumes)
+        defaults.set(state.resumeDay, forKey: Key.day)
+        defaults.set(state.lastCloudWasMaskOff, forKey: Key.lastOff)
+    }
+
+    private enum Key {
+        static let streak = "cloud_mask_off_streak"
+        static let enabled = "cloud_upload_enabled"
+        static let resumes = "cloud_resume_used"
+        static let day = "cloud_resume_day"
+        static let lastOff = "cloud_last_mask_off"
+    }
+}
+
+enum AimReason: Equatable {
+    case face
+    case person
+    case scene
+    case bedside
+    case missed
+}
+
+struct AimVerdict: Equatable {
+    var valid: Bool
+    var reason: AimReason
+}
+
+/// Thresholds match Android `AimGate`.
+enum AimGate {
+    static let minFaceWidthFraction: Float = 0.12
+    static let minPersonAreaFraction: Float = 0.04
+    static let minCenterMean: Float = 0.06
+    static let maxCenterMean: Float = 0.90
+    static let minCenterVariance: Float = 0.0018
+    static let minCenterEdge: Float = 0.012
+
+    static func evaluate(
+        faceWidthFraction: Float,
+        personAreaFraction: Float,
+        sceneMatchesBedside: Bool,
+        centerMean: Float,
+        centerVariance: Float,
+        centerEdge: Float
+    ) -> AimVerdict {
+        if faceWidthFraction >= minFaceWidthFraction {
+            return AimVerdict(valid: true, reason: .face)
+        }
+        if personAreaFraction >= minPersonAreaFraction {
+            return AimVerdict(valid: true, reason: .person)
+        }
+        if sceneMatchesBedside {
+            return AimVerdict(valid: true, reason: .scene)
+        }
+        let bedside = centerMean >= minCenterMean && centerMean <= maxCenterMean
+            && centerVariance >= minCenterVariance
+            && centerEdge >= minCenterEdge
+        if bedside {
+            return AimVerdict(valid: true, reason: .bedside)
+        }
+        return AimVerdict(valid: false, reason: .missed)
+    }
+}
+
+enum AimImageStats {
+    static func center(of image: CGImage) -> (mean: Float, variance: Float, edge: Float) {
+        let side = 48
+        var pixels = [UInt8](repeating: 0, count: side * side * 4)
+        let drew = pixels.withUnsafeMutableBytes { raw -> Bool in
+            guard let context = CGContext(
+                data: raw.baseAddress,
+                width: side,
+                height: side,
+                bitsPerComponent: 8,
+                bytesPerRow: side * 4,
+                space: CGColorSpaceCreateDeviceRGB(),
+                bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue | CGBitmapInfo.byteOrder32Big.rawValue
+            ) else { return false }
+            context.interpolationQuality = .low
+            context.draw(image, in: CGRect(x: 0, y: 0, width: side, height: side))
+            return true
+        }
+        if !drew { return (0, 0, 0) }
+        let start = side / 4
+        let end = side - start
+        var sum = 0.0
+        var sumSq = 0.0
+        var edgeSum = 0.0
+        var count = 0
+        var edges = 0
+        for y in start..<end {
+            var previous = luma(pixels, x: start, y: y, side: side)
+            for x in start..<end {
+                let value = luma(pixels, x: x, y: y, side: side)
+                sum += Double(value)
+                sumSq += Double(value * value)
+                count += 1
+                if x > start {
+                    edgeSum += Double(abs(value - previous))
+                    edges += 1
+                }
+                previous = value
+            }
+        }
+        if count == 0 { return (0, 0, 0) }
+        let mean = sum / Double(count)
+        let variance = max(0, sumSq / Double(count) - mean * mean)
+        let edge = edges == 0 ? 0 : edgeSum / Double(edges)
+        return (Float(mean), Float(variance), Float(edge))
+    }
+
+    private static func luma(_ pixels: [UInt8], x: Int, y: Int, side: Int) -> Float {
+        let index = (y * side + x) * 4
+        let r = Float(pixels[index])
+        let g = Float(pixels[index + 1])
+        let b = Float(pixels[index + 2])
+        return (0.299 * r + 0.587 * g + 0.114 * b) / 255
+    }
+}
+
+/// Vision face / person / bedroom labels, then the same pillow-texture gate as Android.
+enum AimScanner {
+    static func evaluate(_ image: CGImage) -> AimVerdict {
+        let stats = AimImageStats.center(of: image)
+        var faceWidth: Float = 0
+        var personArea: Float = 0
+        var scene = false
+        let faces = VNDetectFaceRectanglesRequest()
+        let humans = VNDetectHumanRectanglesRequest()
+        let labels = VNClassifyImageRequest()
+        let handler = VNImageRequestHandler(cgImage: image, options: [:])
+        try? handler.perform([faces, humans, labels])
+        if let found = faces.results as? [VNFaceObservation] {
+            faceWidth = found.map { Float($0.boundingBox.width) }.max() ?? 0
+        }
+        if let found = humans.results as? [VNHumanObservation] {
+            personArea = found.map { Float($0.boundingBox.width * $0.boundingBox.height) }.max() ?? 0
+        }
+        if let found = labels.results as? [VNClassificationObservation] {
+            scene = found.contains { $0.confidence >= 0.2 && isBedside($0.identifier) }
+        }
+        return AimGate.evaluate(
+            faceWidthFraction: faceWidth,
+            personAreaFraction: personArea,
+            sceneMatchesBedside: scene,
+            centerMean: stats.mean,
+            centerVariance: stats.variance,
+            centerEdge: stats.edge
+        )
+    }
+
+    private static func isBedside(_ identifier: String) -> Bool {
+        let id = identifier.lowercased()
+        if id.contains("pillow") || id.contains("blanket") || id.contains("bedroom") { return true }
+        let parts = id.split { !$0.isLetter }.map(String.init)
+        let tokens: Set<String> = ["bed", "person", "face", "human", "head"]
+        return parts.contains { tokens.contains($0) }
     }
 }
 

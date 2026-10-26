@@ -13,8 +13,8 @@ android {
         applicationId = "app.cpapmaskguard"
         minSdk = 26
         targetSdk = 37
-        versionCode = 19
-        versionName = "0.3.7"
+        versionCode = 20
+        versionName = "0.4.0"
 
         val localProps = Properties()
         val localFile = rootProject.file("local.properties")
@@ -22,11 +22,11 @@ android {
             localFile.inputStream().use { localProps.load(it) }
         }
         val rawKey = localProps.getProperty("minimax.api.key") ?: ""
+        val rawEndpoint = localProps.getProperty("minimax.endpoint") ?: ""
         // Escape for embedding into a Java string literal in BuildConfig
-        val escapedKey = rawKey
-            .replace("\\", "\\\\")
-            .replace("\"", "\\\"")
-        buildConfigField("String", "MINIMAX_API_KEY", "\"$escapedKey\"")
+        fun escape(value: String) = value.replace("\\", "\\\\").replace("\"", "\\\"")
+        buildConfigField("String", "MINIMAX_API_KEY", "\"${escape(rawKey)}\"")
+        buildConfigField("String", "MINIMAX_ENDPOINT", "\"${escape(rawEndpoint)}\"")
     }
 
     buildTypes {

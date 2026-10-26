@@ -46,6 +46,12 @@ object DetectionConfig {
     /** 两类簇中心（或最近样本）之间余弦距离低于此值时，校准警告「两类太像」。 */
     const val EMBED_MIN_BASELINE_SEPARATION = 0.08f
 
+    /**
+     * 上云前：中心裁剪离「戴 / 不戴」任一基准不超过这个余弦距离，
+     * 就当作已经对准床头（比正式分类更松，只回答「像不像这张床」）。
+     */
+    const val AIM_SCENE_MAX_DISTANCE = 0.62f
+
     /** 整帧平均亮度低于此值且方差也低时，弱启发为无人/全黑。 */
     const val PERSON_MIN_LUMA_MEAN = 0.04f
 

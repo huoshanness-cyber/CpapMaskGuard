@@ -23,6 +23,7 @@ import app.cpapmaskguard.alarm.AlarmController
 import app.cpapmaskguard.audio.SnoreListener
 import app.cpapmaskguard.capture.CaptureController
 import app.cpapmaskguard.capture.CameraTuning
+import app.cpapmaskguard.core.CloudUploadPolicy
 import app.cpapmaskguard.core.FrameVote
 import app.cpapmaskguard.core.SnoreFusion
 import app.cpapmaskguard.detector.BaselineStore
@@ -30,6 +31,7 @@ import app.cpapmaskguard.detector.MaskDetector
 import app.cpapmaskguard.notify.Notifications
 import app.cpapmaskguard.runtime.MonitorRuntime
 import app.cpapmaskguard.runtime.RunStatus
+import app.cpapmaskguard.settings.CloudUploadStore
 import app.cpapmaskguard.settings.FillLightMode
 import app.cpapmaskguard.settings.SettingsStore
 import app.cpapmaskguard.FillLightActivity
@@ -57,6 +59,7 @@ import kotlinx.coroutines.withContext
  */
 class MonitorService : LifecycleService() {
     private val settingsStore by lazy { SettingsStore(this) }
+    private val cloudUpload by lazy { CloudUploadStore(this) }
     private val capture by lazy { CaptureController(this, this) }
     private val detector by lazy { MaskDetector(this, BaselineStore(this)) }
     private val alarm by lazy { AlarmController(this) }
@@ -231,9 +234,16 @@ class MonitorService : LifecycleService() {
                         settings.debugSaveCrop -> File(cacheDir, "debug/last_crop.jpg")
                         else -> null
                     }
+                    val gate = cloudUpload.state(captureEpoch)
                     val decision = withContext(Dispatchers.Default) {
-                        detector.onCapturedFile(file, cropOut)
+                        detector.onCapturedFile(
+                            file,
+                            cropOut,
+                            uploadAllowed = gate.uploadEnabled,
+                            holdMaskOffAlarm = !gate.uploadEnabled && gate.lastCloudWasMaskOff,
+                        )
                     }
+                    recordCloudGate(gate, decision, captureEpoch)
                     val captureToJudgeMs = SystemClock.elapsedRealtime() - captureElapsed
                     val fused = SnoreFusion.fuse(
                         cameraShouldAlarm = decision.shouldAlarm,
@@ -242,7 +252,7 @@ class MonitorService : LifecycleService() {
                         snoreConfirmedForMs = snore.confirmedForMs(),
                         cameraSummary = decision.summary,
                     )
-                    val resultLabel = previewResultLabel(decision.vote, fused.shouldAlarm)
+                    val resultLabel = previewResultLabel(decision, fused.shouldAlarm)
                     val spent = SystemClock.elapsedRealtime() - startedAt
                     val timeText = formatCaptureClock(captureEpoch)
                     // 界面列表：一眼能看拍摄时间、结果、判定耗时
@@ -344,7 +354,21 @@ class MonitorService : LifecycleService() {
     ) {
         val snoreBit = if (audioStarted) " · ${snore.lastHint}" else ""
         val detail = summary + snoreBit
-        if (SystemClock.elapsedRealtime() < ignoreFramesUntil || alarm.isPlaying) {
+        if (alarm.isPlaying) {
+            publish(
+                RunStatus.ALARMING,
+                "可能脱落·请戴回",
+                detail,
+                capture.nightExtension,
+                lastScoreHint = summary,
+                bumpFrame = true,
+                snoreHint = snore.lastHint,
+                resultLabel = resultLabel ?: "面罩脱落",
+                frameEpochMs = frameEpochMs,
+            )
+            return
+        }
+        if (SystemClock.elapsedRealtime() < ignoreFramesUntil) {
             publish(
                 RunStatus.MONITORING,
                 "正在确认面罩",
@@ -405,14 +429,38 @@ class MonitorService : LifecycleService() {
         )
     }
 
-    /** NO_PERSON 仅表示真正全黑/无人；有人戴罩绝不会走到这里显示「未检测到人」。 */
-    private fun previewResultLabel(vote: FrameVote, alarmed: Boolean): String {
+    /** 对准失败用软提示，不写成脱落。暂停上传时，只有仍按上次脱落在响才标脱落。 */
+    private fun previewResultLabel(decision: MaskDetector.FrameDecision, alarmed: Boolean): String {
+        if (decision.aimInvalid && !alarmed) return "镜头可能没对准"
+        if (decision.cloudSkipped && !alarmed) return "已暂停上传"
         if (alarmed) return "面罩脱落"
-        return when (vote) {
+        return when (decision.vote) {
             FrameVote.CLOSER_TO_MASK_ON -> "面罩正常"
             FrameVote.CLOSER_TO_MASK_OFF -> "面罩脱落"
             FrameVote.NO_PERSON -> "未检测到人"
             FrameVote.UNCERTAIN -> "不确定"
+        }
+    }
+
+    private fun recordCloudGate(
+        before: CloudUploadPolicy.State,
+        decision: MaskDetector.FrameDecision,
+        epochMs: Long,
+    ) {
+        val vote = decision.cloudVote
+        val updated = when {
+            decision.aimInvalid -> cloudUpload.noteAimInvalid(epochMs)
+            vote != null -> cloudUpload.noteCloud(vote, epochMs)
+            else -> {
+                val rolled = CloudUploadPolicy.roll(before, epochMs)
+                if (rolled != before) cloudUpload.noteAimInvalid(epochMs) else before
+            }
+        }
+        if (before.uploadEnabled && !updated.uploadEnabled) {
+            AppLogger.i(
+                LOG_TAG,
+                "连续 ${updated.consecutiveMaskOff} 次云端面罩脱落，已停止上传。今日还可恢复 ${updated.remaining()} 次",
+            )
         }
     }
 
