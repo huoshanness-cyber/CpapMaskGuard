@@ -1,3 +1,11 @@
+# 0.4.2 · 官方中转，安装包不含 Key
+
+安卓 **0.4.2**（versionCode 22）。
+
+- 默认云端为 `CpapRelayCloudMaskDetector`。`cpap.relay.base` 留空时使用 `https://cpap.njxxzf.cn`；写成 `off` 才关闭中转并回退到本机 MiniMax Key。
+- 仓库和 BuildConfig 默认值都不含 MiniMax API Key。
+- 0.4.1 的省调用门控仍在：对准门、连续脱落停云、上海睡眠日配额、云端熔断后本机兜底。
+
 # 0.4.1 · 假守护、失效提醒、睡眠日
 
 安卓 **0.4.1**（versionCode 21），iOS **0.4.1**（build 5）。

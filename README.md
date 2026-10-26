@@ -53,6 +53,18 @@
 
 ---
 
+## Download / 下载
+
+**Android 0.4.2**（versionCode 22）：[GitHub Release v0.4.2](https://github.com/huoshanness-cyber/CpapMaskGuard/releases/tag/v0.4.2)（`CpapMaskGuard-0.4.2.apk`）。
+
+中文镜像 / Chinese mirror：[https://njxxzf.cn/mianzhao](https://njxxzf.cn/mianzhao)
+
+发布包默认把云端请求发到官方中转 `https://cpap.njxxzf.cn`，安装包里没有 MiniMax API Key。0.4.1 的省调用门控仍在：只拒绝明显全黑、全白或严重模糊的画面；云端连续判脱落后暂停上传；上海睡眠日（中午换日）限制恢复次数；云端连续失败后改走本机兜底。
+
+The release build sends cloud requests to the official relay at `https://cpap.njxxzf.cn` and does not embed a MiniMax API key. The 0.4.1 cost-saving gates remain: skip the cloud only for a clearly black, white, or badly blurred frame; pause uploads after repeated cloud mask-off results; limit resumes on the Shanghai sleep day (noon rollover); fall back on device after repeated cloud failures.
+
+---
+
 ## How to use / 怎么用
 
 1. Put the phone on a stand aimed at the pillow (rear camera).  
@@ -72,10 +84,10 @@
 
 - Open in Android Studio (Windows / macOS / Linux).
 - Copy `local.properties.example` → `local.properties`, set `sdk.dir`.
-- Optional: `minimax.api.key` for cloud detection (**never commit** `local.properties`).
+- Leave `cpap.relay.base` empty to use `https://cpap.njxxzf.cn`. Set it to `off` to disable the relay. A MiniMax key, if you use one, belongs only in `local.properties`. **Never commit** that file or a real key.
 - Build a debug APK and install on device.
 
-用 Android Studio 打开工程；复制并填写 `local.properties`；可选写入 MiniMax Key；**不要提交**该文件。
+用 Android Studio 打开工程；复制并填写 `local.properties`。`cpap.relay.base` 留空即用 `https://cpap.njxxzf.cn`，写成 `off` 才关闭中转。MiniMax Key 只放在 `local.properties`，**不要提交**该文件。
 
 ### iOS foreground monitor / 亮屏前台监测
 

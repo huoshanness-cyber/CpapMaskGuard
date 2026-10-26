@@ -5,3 +5,6 @@ sdk.dir=C:/Users/YOUR_USER/AppData/Local/Android/Sdk
 minimax.api.key=
 # Optional. Empty uses https://api.minimax.cn/v1/chat/completions
 # minimax.endpoint=
+# Official relay. Empty uses https://cpap.njxxzf.cn.
+# Set to off, none, or false to disable the relay. Do not put an API key in this file.
+cpap.relay.base=
