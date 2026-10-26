@@ -13,8 +13,8 @@ android {
         applicationId = "app.cpapmaskguard"
         minSdk = 26
         targetSdk = 37
-        versionCode = 21
-        versionName = "0.4.1"
+        versionCode = 22
+        versionName = "0.4.2"
 
         val localProps = Properties()
         val localFile = rootProject.file("local.properties")
@@ -27,6 +27,9 @@ android {
         fun escape(value: String) = value.replace("\\", "\\\\").replace("\"", "\\\"")
         buildConfigField("String", "MINIMAX_API_KEY", "\"${escape(rawKey)}\"")
         buildConfigField("String", "MINIMAX_ENDPOINT", "\"${escape(rawEndpoint)}\"")
+        val rawRelay = localProps.getProperty("cpap.relay.base") ?: ""
+        // Empty -> official https://cpap.njxxzf.cn; cpap.relay.base=off disables relay
+        buildConfigField("String", "CPAP_RELAY_BASE", "\"${escape(rawRelay)}\"")
     }
 
     buildTypes {

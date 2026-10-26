@@ -33,15 +33,30 @@ class MaskDetector(
     private val appContext = context.applicationContext
     private val debouncer = app.cpapmaskguard.core.Debouncer()
     private val embedder = TfliteEmbedder(appContext)
-    private val cloud: CloudMaskDetector = run {
-        val key = BuildConfig.MINIMAX_API_KEY.trim()
-        if (key.isNotEmpty()) {
-            val endpoint = BuildConfig.MINIMAX_ENDPOINT.trim().ifEmpty {
-                MiniMaxCloudMaskDetector.DEFAULT_ENDPOINT
-            }
-            MiniMaxCloudMaskDetector(apiKey = key, endpoint = endpoint)
+    private val cloudEngineName: String
+    private val cloud: CloudMaskDetector
+
+    init {
+        val relayBase = CpapRelayCloudMaskDetector.normalizeBase(BuildConfig.CPAP_RELAY_BASE)
+        if (relayBase != null) {
+            cloudEngineName = "cpap-relay"
+            cloud = CpapRelayCloudMaskDetector(
+                context = context,
+                baseUrl = relayBase,
+                appVersion = BuildConfig.VERSION_NAME,
+            )
         } else {
-            UnimplementedCloudMaskDetector()
+            val key = BuildConfig.MINIMAX_API_KEY.trim()
+            if (key.isNotEmpty()) {
+                cloudEngineName = "minimax-m3"
+                val endpoint = BuildConfig.MINIMAX_ENDPOINT.trim().ifEmpty {
+                    MiniMaxCloudMaskDetector.DEFAULT_ENDPOINT
+                }
+                cloud = MiniMaxCloudMaskDetector(apiKey = key, endpoint = endpoint)
+            } else {
+                cloudEngineName = "none"
+                cloud = UnimplementedCloudMaskDetector()
+            }
         }
     }
 
@@ -86,10 +101,10 @@ class MaskDetector(
             return "已跳过校准（仅调试）。会拍照，但不会判断，也不会响铃。"
         }
 
-        val cloudHint = if (cloud.configured) {
-            "云端 M3 为主"
-        } else {
-            "未配云端 Key，仅本机"
+        val cloudHint = when {
+            cloud.configured && cloudEngineName == "cpap-relay" -> "官方中转为主（无需本机 Key）"
+            cloud.configured -> "云端 M3 为主"
+            else -> "未配云端，仅本机"
         }
 
         // 云端不依赖本机基准；仍尽量准备本机备用
@@ -303,7 +318,7 @@ class MaskDetector(
                     return finish(
                         comparison,
                         inferMs,
-                        "minimax-m3",
+                        cloudEngineName,
                         cloudVote = cloudResult.vote,
                         promptTokens = cloudResult.promptTokens,
                         completionTokens = cloudResult.completionTokens,
