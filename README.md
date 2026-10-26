@@ -80,7 +80,7 @@
 ### iOS foreground monitor / 亮屏前台监测
 
 Project / 工程：`ios/CpapMaskGuard/CpapMaskGuard.xcodeproj`  
-Target device / 目标机：iPhone, including iPhone 17 Pro Max. Portrait only. Marketing version **0.3.9** (build 3).
+Target device / 目标机：iPhone, including iPhone 17 Pro Max. Portrait only. Marketing version **0.4.1** (build 6). 监测和样张从视频流取帧，国行不再响快门声。
 
 iOS **cannot** keep the camera on in the true background. The home screen says so. Lock the screen or switch apps and capture, the siren, and the fill light all stop. There is no「使用前检查本机」and no burn-in page.
 

@@ -71,6 +71,7 @@ private struct DeviceStatusPage: View {
                 .foregroundStyle(GuardTheme.muted)
                 .fixedSize(horizontal: false, vertical: true)
             VStack(alignment: .leading, spacing: 10) {
+                row(model.l10n.rowVersion, model.l10n.appVersionLabel)
                 row(model.l10n.rowPhase, model.headline)
                 row(model.l10n.rowFill, model.l10n.fillName(model.fillMode))
                 row(model.l10n.rowTorch, model.torchHardwareOn ? model.torchStatus : model.l10n.torchOffNow)
@@ -150,7 +151,7 @@ private struct DeviceStatusPage: View {
 }
 
 /// Local sample frames. Opening the page does not start a camera.
-/// The explicit button takes one foreground still, then closes the session.
+/// The explicit button grabs one silent foreground JPEG, then closes the session.
 private struct BaselinePhotosPage: View {
     @ObservedObject var model: GuardModel
     @State private var items: [ArchiveItem] = []

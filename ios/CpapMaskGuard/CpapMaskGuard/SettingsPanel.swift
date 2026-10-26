@@ -18,6 +18,9 @@ struct SettingsPanel: View {
                     .font(.footnote)
                     .foregroundStyle(secondary)
                     .fixedSize(horizontal: false, vertical: true)
+                Text(model.l10n.appVersionLabel)
+                    .font(.footnote)
+                    .foregroundStyle(secondary)
             }
             .padding(.top, 8)
         } label: {

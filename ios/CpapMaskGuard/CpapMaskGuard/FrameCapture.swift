@@ -1,5 +1,8 @@
 import AVFoundation
+import CoreImage
 import Foundation
+import ImageIO
+import UIKit
 
 enum CaptureError: Error {
     case noCamera
@@ -10,19 +13,55 @@ enum CaptureError: Error {
     case failed(String)
 }
 
-/// One foreground `AVCaptureSession` for stills and, on the rear camera, the torch.
-/// The session is stopped when guarding stops or the app leaves the foreground.
+/// Foreground camera for monitoring and baseline JPEGs, and for the rear torch.
+///
+/// `takeJPEG()` encodes one frame from `AVCaptureVideoDataOutput`. It does not
+/// call `AVCapturePhotoOutput.capturePhoto`, which plays a shutter sound on
+/// China-region iPhones that the mute switch cannot turn off. Callers still
+/// receive JPEG `Data` for the thumbnail, the aim gate, and cloud classify.
+/// The session stops when guarding stops or the app leaves the foreground.
 /// This is not a background camera.
-final class FrameCapture: NSObject, AVCapturePhotoCaptureDelegate, @unchecked Sendable {
+final class FrameCapture: NSObject, @unchecked Sendable {
     private let queue = DispatchQueue(label: "app.cpapmaskguard.capture")
+    private let videoQueue = DispatchQueue(label: "app.cpapmaskguard.capture.video")
     private let session = AVCaptureSession()
-    private let photo = AVCapturePhotoOutput()
+    private let video = AVCaptureVideoDataOutput()
+    private let sink = VideoFrameSink()
+    private let ciContext = CIContext(options: [.cacheIntermediates: false])
+    private let frameTimeout: TimeInterval = 8
+    private static let jpegSOI: [UInt8] = [0xFF, 0xD8]
+    /// Let auto-exposure move before the first JPEG after the sensor starts.
+    private let warmUp: TimeInterval = 0.25
+
     private var device: AVCaptureDevice?
     private var position: AVCaptureDevice.Position?
     private var wantTorch = false
     private var torchLevel: Float = 0
-    private var shotTicket = 0
-    private var pending: PendingShot?
+
+    /// Touched only on `videoQueue`.
+    private var acceptingFrames = false
+    private var acceptAfter = Date.distantFuture
+    private var buffersArePortrait = false
+    private var activePosition: AVCaptureDevice.Position = .back
+    private var waiters: [FrameWaiter] = []
+
+    override init() {
+        super.init()
+        sink.owner = self
+    }
+
+    deinit {
+        sink.owner = nil
+        let output = video
+        let runningSession = session
+        let schedule = queue
+        output.setSampleBufferDelegate(nil, queue: nil)
+        schedule.async {
+            if runningSession.isRunning {
+                runningSession.stopRunning()
+            }
+        }
+    }
 
     func start(position: AVCaptureDevice.Position, torchEnabled: Bool, level: Float) async throws -> TorchReport {
         try await withCheckedThrowingContinuation { continuation in
@@ -45,34 +84,28 @@ final class FrameCapture: NSObject, AVCapturePhotoCaptureDelegate, @unchecked Se
         }
     }
 
+    /// Next video frame as JPEG. Waits out the post-start warm-up, then the next buffer.
     func takeJPEG() async throws -> Data {
         let once = ResumeOnce()
         return try await withCheckedThrowingContinuation { continuation in
             queue.async {
-                self.finishPending(.failure(CaptureError.stopped))
-                self.shotTicket += 1
-                let ticket = self.shotTicket
                 guard self.session.isRunning else {
                     once.resume(continuation, .failure(CaptureError.notRunning))
                     return
                 }
-                guard !self.photo.availablePhotoCodecTypes.isEmpty else {
-                    once.resume(continuation, .failure(CaptureError.noCamera))
-                    return
+                let waiter = FrameWaiter(once: once, continuation: continuation)
+                self.videoQueue.async {
+                    guard self.acceptingFrames else {
+                        once.resume(continuation, .failure(CaptureError.notRunning))
+                        return
+                    }
+                    self.cancelWaiters(.failure(CaptureError.stopped))
+                    self.waiters.append(waiter)
                 }
-                let codec: AVVideoCodecType = self.photo.availablePhotoCodecTypes.contains(.jpeg)
-                    ? .jpeg
-                    : self.photo.availablePhotoCodecTypes[0]
-                let settings = AVCapturePhotoSettings(format: [AVVideoCodecKey: codec])
-                if self.photo.supportedFlashModes.contains(.off) {
-                    settings.flashMode = .off
-                }
-                settings.photoQualityPrioritization = .speed
-                self.pending = PendingShot(ticket: ticket, once: once, continuation: continuation)
-                self.photo.capturePhoto(with: settings, delegate: self)
-                self.queue.asyncAfter(deadline: .now() + 8) {
-                    guard self.shotTicket == ticket else { return }
-                    self.finishPending(.failure(CaptureError.timeout))
+                self.queue.asyncAfter(deadline: .now() + self.frameTimeout) {
+                    self.videoQueue.async {
+                        self.timeout(waiter)
+                    }
                 }
             }
         }
@@ -81,8 +114,8 @@ final class FrameCapture: NSObject, AVCapturePhotoCaptureDelegate, @unchecked Se
     func stop() async {
         await withCheckedContinuation { continuation in
             queue.async {
-                self.finishPending(.failure(CaptureError.stopped))
-                self.shotTicket += 1
+                self.video.setSampleBufferDelegate(nil, queue: nil)
+                self.quiesceVideoQueue()
                 self.turnTorchOffOnQueue()
                 if self.session.isRunning {
                     self.session.stopRunning()
@@ -94,24 +127,15 @@ final class FrameCapture: NSObject, AVCapturePhotoCaptureDelegate, @unchecked Se
         }
     }
 
-    func photoOutput(
-        _ output: AVCapturePhotoOutput,
-        didFinishProcessingPhoto photo: AVCapturePhoto,
-        error: Error?
-    ) {
-        queue.async {
-            if let error {
-                self.finishPending(.failure(error))
-                return
-            }
-            guard let data = photo.fileDataRepresentation(), !data.isEmpty else {
-                self.finishPending(.failure(CaptureError.empty))
-                return
-            }
-            self.finishPending(.success(data))
-            if self.session.isRunning {
-                _ = self.setTorchOnQueue(enabled: self.wantTorch, level: self.torchLevel)
-            }
+    fileprivate func ingest(_ sampleBuffer: CMSampleBuffer) {
+        guard acceptingFrames, Date() >= acceptAfter else { return }
+        guard !waiters.isEmpty else { return }
+        guard let pixelBuffer = CMSampleBufferGetImageBuffer(sampleBuffer) else { return }
+        guard let jpeg = jpegData(pixelBuffer: pixelBuffer), jpeg.starts(with: Self.jpegSOI) else { return }
+        let pending = waiters
+        waiters.removeAll()
+        for waiter in pending {
+            waiter.once.resume(waiter.continuation, .success(jpeg))
         }
     }
 
@@ -123,6 +147,8 @@ final class FrameCapture: NSObject, AVCapturePhotoCaptureDelegate, @unchecked Se
         if self.position == position, session.isRunning {
             return setTorchOnQueue(enabled: torchEnabled, level: level)
         }
+        video.setSampleBufferDelegate(nil, queue: nil)
+        quiesceVideoQueue()
         if session.isRunning {
             session.stopRunning()
         }
@@ -134,8 +160,8 @@ final class FrameCapture: NSObject, AVCapturePhotoCaptureDelegate, @unchecked Se
             session.sessionPreset = .hd1280x720
         } else if session.canSetSessionPreset(.vga640x480) {
             session.sessionPreset = .vga640x480
-        } else if session.canSetSessionPreset(.photo) {
-            session.sessionPreset = .photo
+        } else if session.canSetSessionPreset(.high) {
+            session.sessionPreset = .high
         }
         guard let camera = AVCaptureDevice.default(.builtInWideAngleCamera, for: .video, position: position) else {
             session.commitConfiguration()
@@ -153,33 +179,90 @@ final class FrameCapture: NSObject, AVCapturePhotoCaptureDelegate, @unchecked Se
             throw CaptureError.noCamera
         }
         session.addInput(input)
-        if !session.outputs.contains(where: { $0 === photo }) {
-            if !session.canAddOutput(photo), session.canSetSessionPreset(.photo) {
-                session.sessionPreset = .photo
-            }
-            guard session.canAddOutput(photo) else {
-                session.commitConfiguration()
-                throw CaptureError.noCamera
-            }
-            session.addOutput(photo)
+        do {
+            try ensureVideoOutput()
+        } catch {
+            session.commitConfiguration()
+            throw error
         }
-        photo.maxPhotoQualityPrioritization = .speed
         session.commitConfiguration()
-        if let connection = photo.connection(with: .video) {
-            if connection.isVideoOrientationSupported {
-                connection.videoOrientation = .portrait
-            }
-            if position == .front, connection.isVideoMirroringSupported {
-                connection.automaticallyAdjustsVideoMirroring = false
-                connection.isVideoMirrored = false
-            }
-        }
+        // Rotation has to be set before startRunning. Doing it in its own
+        // configuration pass makes sure the connection already exists.
+        session.beginConfiguration()
+        preferBGRA()
+        let portrait = orientVideoConnection(position: position)
+        session.commitConfiguration()
         device = camera
         self.position = position
         tune(camera)
+        video.setSampleBufferDelegate(sink, queue: videoQueue)
         session.startRunning()
-        guard session.isRunning else { throw CaptureError.notRunning }
+        guard session.isRunning else {
+            video.setSampleBufferDelegate(nil, queue: nil)
+            throw CaptureError.notRunning
+        }
+        videoQueue.sync {
+            self.buffersArePortrait = portrait
+            self.activePosition = position
+            self.acceptingFrames = true
+            self.acceptAfter = Date().addingTimeInterval(self.warmUp)
+        }
         return setTorchOnQueue(enabled: torchEnabled && position == .back, level: level)
+    }
+
+    private func ensureVideoOutput() throws {
+        video.alwaysDiscardsLateVideoFrames = true
+        if !session.outputs.contains(where: { $0 === video }) {
+            if !session.canAddOutput(video), session.canSetSessionPreset(.vga640x480) {
+                session.sessionPreset = .vga640x480
+            }
+            if !session.canAddOutput(video), session.canSetSessionPreset(.high) {
+                session.sessionPreset = .high
+            }
+            guard session.canAddOutput(video) else { throw CaptureError.noCamera }
+            session.addOutput(video)
+        }
+    }
+
+    /// 32BGRA is the format CIImage turns into a JPEG without a YUV conversion surprise.
+    /// Native 420f still encodes if this format is not in the list.
+    private func preferBGRA() {
+        let bgra = kCVPixelFormatType_32BGRA
+        guard video.availableVideoPixelFormatTypes.contains(bgra) else { return }
+        video.videoSettings = [
+            kCVPixelBufferPixelFormatTypeKey as String: NSNumber(value: bgra),
+        ]
+    }
+
+    /// Portrait pixels, same angle the old photo connection used (`.portrait` == 90°).
+    /// Video data output rotates the buffers. Photo output only tagged EXIF.
+    private func orientVideoConnection(position: AVCaptureDevice.Position) -> Bool {
+        guard let connection = video.connection(with: .video) else { return false }
+        let angle: CGFloat = 90
+        var portrait = false
+        if connection.isVideoRotationAngleSupported(angle) {
+            connection.videoRotationAngle = angle
+            portrait = true
+        }
+        if position == .front, connection.isVideoMirroringSupported {
+            connection.automaticallyAdjustsVideoMirroring = false
+            connection.isVideoMirrored = false
+        }
+        return portrait
+    }
+
+    private func jpegData(pixelBuffer: CVPixelBuffer) -> Data? {
+        var image = CIImage(cvPixelBuffer: pixelBuffer, options: [.applyOrientationProperty: false])
+        if !buffersArePortrait {
+            // Sensor-native fallback when the connection cannot rotate.
+            // Back camera, phone upright: 90° clockwise. Front, unmirrored: the other way.
+            let orientation: CGImagePropertyOrientation = activePosition == .front ? .left : .right
+            image = image.oriented(orientation)
+        }
+        let extent = image.extent
+        guard !extent.isNull, !extent.isInfinite, extent.width > 1, extent.height > 1 else { return nil }
+        guard let cgImage = ciContext.createCGImage(image, from: extent) else { return nil }
+        return UIImage(cgImage: cgImage).jpegData(compressionQuality: 0.85)
     }
 
     private func tune(_ camera: AVCaptureDevice) {
@@ -271,20 +354,48 @@ final class FrameCapture: NSObject, AVCapturePhotoCaptureDelegate, @unchecked Se
         }
     }
 
-    private func finishPending(_ result: Result<Data, Error>) {
-        guard let pending else { return }
-        self.pending = nil
-        pending.once.resume(pending.continuation, result)
+    /// Caller is on `queue`. Waits until any in-flight frame callback finishes.
+    private func quiesceVideoQueue() {
+        videoQueue.sync {
+            acceptingFrames = false
+            acceptAfter = Date.distantFuture
+            cancelWaiters(.failure(CaptureError.stopped))
+        }
+    }
+
+    private func cancelWaiters(_ result: Result<Data, Error>) {
+        let pending = waiters
+        waiters.removeAll()
+        for waiter in pending {
+            waiter.once.resume(waiter.continuation, result)
+        }
+    }
+
+    private func timeout(_ waiter: FrameWaiter) {
+        guard let index = waiters.firstIndex(where: { $0 === waiter }) else { return }
+        waiters.remove(at: index)
+        waiter.once.resume(waiter.continuation, .failure(CaptureError.timeout))
     }
 }
 
-private final class PendingShot {
-    let ticket: Int
+/// Breaks the retain cycle: the video output keeps its sample-buffer delegate.
+private final class VideoFrameSink: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate {
+    weak var owner: FrameCapture?
+
+    func captureOutput(
+        _ output: AVCaptureOutput,
+        didOutput sampleBuffer: CMSampleBuffer,
+        from connection: AVCaptureConnection
+    ) {
+        owner?.ingest(sampleBuffer)
+    }
+}
+
+private final class FrameWaiter {
     let once: ResumeOnce
     let continuation: CheckedContinuation<Data, Error>
 
-    init(ticket: Int, once: ResumeOnce, continuation: CheckedContinuation<Data, Error>) {
-        self.ticket = ticket
+    init(once: ResumeOnce, continuation: CheckedContinuation<Data, Error>) {
         self.once = once
         self.continuation = continuation
     }

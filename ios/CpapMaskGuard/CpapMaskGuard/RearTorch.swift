@@ -124,6 +124,7 @@ final class RearTorch: @unchecked Sendable {
             session.commitConfiguration()
             return "后摄打不开：\(error.localizedDescription)"
         }
+        // Torch-only session. This output is never asked to capture, so it does not click.
         let output = AVCapturePhotoOutput()
         if session.canAddOutput(output) {
             session.addOutput(output)

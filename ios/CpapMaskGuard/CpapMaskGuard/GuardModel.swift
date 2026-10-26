@@ -391,6 +391,7 @@ final class GuardModel: ObservableObject {
                 await leaveForeground()
                 return
             }
+            // Silent video-frame JPEG. Same Data the aim gate and cloud path already take.
             let raw = try await capture.takeJPEG()
             await capture.stop()
             cameraLive = false
@@ -501,6 +502,7 @@ final class GuardModel: ObservableObject {
                     guard stillGuarding(token) else { return }
                     applyTorchReport(report)
                 }
+                // Silent video-frame JPEG. Interval below is unchanged.
                 let raw = try await capture.takeJPEG()
                 guard stillGuarding(token) else { return }
                 let capturedAt = Date()

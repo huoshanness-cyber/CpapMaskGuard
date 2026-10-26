@@ -225,6 +225,7 @@ struct L10n {
     var rowLatency: String { language == .zh ? "判定耗时" : "Judge time" }
     var rowSnore: String { language == .zh ? "听鼾" : "Snore" }
     var rowKey: String { language == .zh ? "云端 Key" : "Cloud key" }
+    var rowVersion: String { language == .zh ? "版本" : "Version" }
     var healthPending: String { language == .zh ? "还没有样本" : "No sample yet" }
     var keyYes: String { language == .zh ? "已配置" : "Set" }
     var keyNo: String { language == .zh ? "未配置" : "Not set" }
@@ -537,9 +538,21 @@ struct L10n {
             : "\(streak) mask-off results in a row. Uploads stopped. The alarm continues. \(remaining) resumes left tonight."
     }
 
+    /// Marketing version and build from the bundle, for example `0.4.1 (6)`.
+    var appVersionLabel: String {
+        let info = Bundle.main.infoDictionary ?? [:]
+        let version = (info["CFBundleShortVersionString"] as? String ?? "")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        let build = (info["CFBundleVersion"] as? String ?? "")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        let short = version.isEmpty ? "0.4.1" : version
+        guard !build.isEmpty else { return short }
+        return "\(short) (\(build))"
+    }
+
     var versionFooter: String {
         language == .zh
-            ? "iOS 0.4.1 · 亮屏前台监测 · MIT"
-            : "iOS 0.4.1 · foreground monitor · MIT"
+            ? "iOS \(appVersionLabel) · 亮屏前台监测 · MIT"
+            : "iOS \(appVersionLabel) · foreground monitor · MIT"
     }
 }
