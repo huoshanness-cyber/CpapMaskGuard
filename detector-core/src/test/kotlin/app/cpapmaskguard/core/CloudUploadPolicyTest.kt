@@ -8,12 +8,16 @@ import kotlin.test.assertTrue
 
 class CloudUploadPolicyTest {
     private val evening = Instant.parse("2026-10-25T15:00:00Z").toEpochMilli()
-    private val nextShanghaiMidnight = Instant.parse("2026-10-25T16:00:00Z").toEpochMilli()
+    private val shanghaiMidnight = Instant.parse("2026-10-25T16:00:00Z").toEpochMilli()
+    private val beforeShanghaiNoon = Instant.parse("2026-10-26T03:59:00Z").toEpochMilli()
+    private val shanghaiNoon = Instant.parse("2026-10-26T04:00:00Z").toEpochMilli()
 
     @Test
-    fun dayKeyUsesShanghaiCalendar() {
+    fun dayKeyUsesShanghaiNoonNotMidnight() {
         assertEquals("2026-10-25", CloudUploadPolicy.dayKey(evening))
-        assertEquals("2026-10-26", CloudUploadPolicy.dayKey(nextShanghaiMidnight))
+        assertEquals("2026-10-25", CloudUploadPolicy.dayKey(shanghaiMidnight))
+        assertEquals("2026-10-25", CloudUploadPolicy.dayKey(beforeShanghaiNoon))
+        assertEquals("2026-10-26", CloudUploadPolicy.dayKey(shanghaiNoon))
     }
 
     @Test
@@ -126,7 +130,7 @@ class CloudUploadPolicyTest {
     }
 
     @Test
-    fun shanghaiMidnightRestoresTheResumeQuotaWithoutReopeningUpload() {
+    fun midnightDoesNotRestoreTheResumeQuota() {
         val stopped = CloudUploadPolicy.State(
             consecutiveMaskOff = 10,
             uploadEnabled = false,
@@ -134,12 +138,29 @@ class CloudUploadPolicyTest {
             resumesUsed = 10,
             resumeDay = "2026-10-25",
         )
-        val rolled = CloudUploadPolicy.roll(stopped, nextShanghaiMidnight)
+        val rolled = CloudUploadPolicy.roll(stopped, shanghaiMidnight)
+        assertEquals(10, rolled.resumesUsed)
+        assertEquals("2026-10-25", rolled.resumeDay)
+        assertFalse(rolled.uploadEnabled)
+        val denied = CloudUploadPolicy.resume(stopped, beforeShanghaiNoon)
+        assertTrue(denied is CloudUploadPolicy.Resume.Denied)
+    }
+
+    @Test
+    fun shanghaiNoonRestoresTheResumeQuotaWithoutReopeningUpload() {
+        val stopped = CloudUploadPolicy.State(
+            consecutiveMaskOff = 10,
+            uploadEnabled = false,
+            lastCloudWasMaskOff = true,
+            resumesUsed = 10,
+            resumeDay = "2026-10-25",
+        )
+        val rolled = CloudUploadPolicy.roll(stopped, shanghaiNoon)
         assertEquals(0, rolled.resumesUsed)
         assertEquals("2026-10-26", rolled.resumeDay)
         assertFalse(rolled.uploadEnabled)
         assertEquals(10, rolled.consecutiveMaskOff)
-        val outcome = CloudUploadPolicy.resume(stopped, nextShanghaiMidnight)
+        val outcome = CloudUploadPolicy.resume(stopped, shanghaiNoon)
         assertTrue(outcome is CloudUploadPolicy.Resume.Accepted)
         assertEquals(1, outcome.state.resumesUsed)
     }

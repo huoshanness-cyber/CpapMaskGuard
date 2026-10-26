@@ -14,6 +14,7 @@ object LocalAimProbe {
         val mean: Float,
         val variance: Float,
         val edge: Float,
+        val signature: List<Float> = emptyList(),
     )
 
     fun faceWidthFraction(bitmap: Bitmap): Float {
@@ -65,7 +66,7 @@ object LocalAimProbe {
             val mean = sum / n
             val variance = (sumSq / n - mean * mean).coerceAtLeast(0.0)
             val edge = if (edges == 0) 0.0 else edgeSum / edges
-            Center(mean.toFloat(), variance.toFloat(), edge.toFloat())
+            Center(mean.toFloat(), variance.toFloat(), edge.toFloat(), signature(scaled))
         } finally {
             if (scaled !== bitmap && !scaled.isRecycled) scaled.recycle()
         }
@@ -92,6 +93,28 @@ object LocalAimProbe {
         val rgb = scaled.copy(Bitmap.Config.RGB_565, false)
         if (scaled !== bitmap && scaled !== rgb && !scaled.isRecycled) scaled.recycle()
         return rgb
+    }
+
+    private fun signature(scaled: Bitmap): List<Float> {
+        val cells = 4
+        val cell = scaled.width / cells
+        if (cell <= 0) return emptyList()
+        val sums = FloatArray(cells * cells)
+        val counts = IntArray(cells * cells)
+        var y = 0
+        while (y < scaled.height) {
+            var x = 0
+            while (x < scaled.width) {
+                val index = (y / cell).coerceAtMost(cells - 1) * cells + (x / cell).coerceAtMost(cells - 1)
+                sums[index] += luma(scaled.getPixel(x, y)).toFloat()
+                counts[index] += 1
+                x += 1
+            }
+            y += 1
+        }
+        return List(cells * cells) { index ->
+            if (counts[index] == 0) 0f else sums[index] / counts[index]
+        }
     }
 
     private fun luma(color: Int): Double {

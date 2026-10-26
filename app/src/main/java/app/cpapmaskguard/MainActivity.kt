@@ -1213,6 +1213,8 @@ class MainActivity : AppCompatActivity() {
                     getString(R.string.status_checking) to getString(R.string.aim_soft_hint)
                 label.contains("暂停") ->
                     getString(R.string.status_checking) to getString(R.string.upload_paused_detail)
+                label.contains("本机") ->
+                    getString(R.string.status_checking) to getString(R.string.resume_exhausted)
                 else ->
                     getString(R.string.status_checking) to "正在看面罩还在不在。"
             }
@@ -1224,10 +1226,14 @@ class MainActivity : AppCompatActivity() {
                 }
                 getString(R.string.status_off_alert) to getString(body)
             }
-            RunStatus.ERROR ->
-                getString(R.string.status_place_phone) to detailFallback.ifBlank {
-                    "相机不太稳定，请检查摆放与权限。"
+            RunStatus.ERROR -> {
+                val head = when {
+                    detailFallback.contains("守护已中断") -> "守护已中断，点此恢复"
+                    detailFallback.contains("连续判定失败") || detailFallback.contains("没有新的判定") -> "守护失效"
+                    else -> getString(R.string.status_place_phone)
                 }
+                head to detailFallback.ifBlank { "相机不太稳定，请检查摆放与权限。" }
+            }
         }
     }
 

@@ -1,6 +1,7 @@
 package app.cpapmaskguard.settings
 
 import android.content.Context
+import app.cpapmaskguard.core.CloudCircuit
 import app.cpapmaskguard.core.CloudUploadPolicy
 import app.cpapmaskguard.core.FrameVote
 
@@ -33,6 +34,22 @@ class CloudUploadStore(context: Context) {
         return outcome
     }
 
+    fun circuit(): CloudCircuit.State {
+        return CloudCircuit.State(
+            consecutiveFailures = prefs.getInt(KEY_CIRCUIT_FAILS, 0).coerceAtLeast(0),
+            openUntilEpochMs = prefs.getLong(KEY_CIRCUIT_OPEN, 0L),
+            lastProbeEpochMs = prefs.getLong(KEY_CIRCUIT_PROBE, 0L),
+        )
+    }
+
+    fun saveCircuit(state: CloudCircuit.State) {
+        prefs.edit()
+            .putInt(KEY_CIRCUIT_FAILS, state.consecutiveFailures)
+            .putLong(KEY_CIRCUIT_OPEN, state.openUntilEpochMs)
+            .putLong(KEY_CIRCUIT_PROBE, state.lastProbeEpochMs)
+            .commit()
+    }
+
     private fun read(): CloudUploadPolicy.State {
         return CloudUploadPolicy.State(
             consecutiveMaskOff = prefs.getInt(KEY_STREAK, 0).coerceAtLeast(0),
@@ -60,5 +77,8 @@ class CloudUploadStore(context: Context) {
         const val KEY_RESUMES = "cloud_resume_used"
         const val KEY_DAY = "cloud_resume_day"
         const val KEY_LAST_OFF = "cloud_last_mask_off"
+        const val KEY_CIRCUIT_FAILS = "cloud_circuit_fails"
+        const val KEY_CIRCUIT_OPEN = "cloud_circuit_open_until"
+        const val KEY_CIRCUIT_PROBE = "cloud_circuit_last_probe"
     }
 }

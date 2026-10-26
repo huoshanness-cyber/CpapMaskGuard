@@ -100,7 +100,22 @@ enum MiniMaxClient {
         }
         let trimmed = content.trimmingCharacters(in: .whitespacesAndNewlines)
         if trimmed.isEmpty { throw MiniMaxError.emptyContent }
-        return LabelParser.parse(trimmed)
+        let parsed = LabelParser.parse(trimmed)
+        let usage = usageTokens(json)
+        return CloudClassification(
+            vote: parsed.vote,
+            confidence: parsed.confidence,
+            raw: parsed.raw,
+            promptTokens: usage.prompt,
+            completionTokens: usage.completion
+        )
+    }
+
+    private static func usageTokens(_ json: [String: Any]) -> (prompt: Int, completion: Int) {
+        guard let usage = json["usage"] as? [String: Any] else { return (-1, -1) }
+        let prompt = intValue(usage["prompt_tokens"]) ?? intValue(usage["input_tokens"]) ?? -1
+        let completion = intValue(usage["completion_tokens"]) ?? intValue(usage["output_tokens"]) ?? -1
+        return (prompt, completion)
     }
 
     private static func messageContent(_ json: [String: Any]) -> String? {

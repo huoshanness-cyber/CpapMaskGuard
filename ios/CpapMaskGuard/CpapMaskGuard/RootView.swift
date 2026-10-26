@@ -54,8 +54,16 @@ struct RootView: View {
             }
         }
         .onChange(of: scenePhase) { _, phase in
-            guard phase == .background else { return }
-            Task { await model.leaveForeground() }
+            switch phase {
+            case .background:
+                Task { await model.leaveForeground() }
+            case .active:
+                model.resumeLoopIfStillGuarding()
+            case .inactive:
+                break
+            @unknown default:
+                break
+            }
         }
     }
 
@@ -132,7 +140,13 @@ struct RootView: View {
                         .font(.body)
                         .foregroundStyle(foregroundText)
                 }
-                if model.phase == .guarding {
+                    if model.phase == .guarding, model.judgmentAgeSeconds >= 0 {
+                        Text(model.l10n.lastJudgment(model.judgmentAgeSeconds))
+                            .font(.subheadline.monospacedDigit().weight(model.watchdogStale ? .bold : .regular))
+                            .foregroundStyle(model.watchdogStale ? Color.red : foregroundMuted)
+                            .accessibilityIdentifier("home.judgmentAge")
+                    }
+                    if model.phase == .guarding {
                     Text(model.snoreHint)
                         .font(.footnote)
                         .foregroundStyle(foregroundMuted)

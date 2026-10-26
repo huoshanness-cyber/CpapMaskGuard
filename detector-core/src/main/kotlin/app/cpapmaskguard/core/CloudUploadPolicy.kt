@@ -6,7 +6,7 @@ import java.time.ZoneId
 /**
  * 省流量的云端开关。
  * 连续 [MASK_OFF_STOP] 次云端 MASK_OFF 后停止再上传；
- * 每个 Asia/Shanghai 自然日最多手动恢复 [DAILY_RESUME_LIMIT] 次。
+ * 每个 Asia/Shanghai 睡眠日（本地中午 12:00 换日，不是午夜）最多恢复 [DAILY_RESUME_LIMIT] 次。
  * 对准失败不是云端结果，不计入、也不打断这串 MASK_OFF。
  */
 object CloudUploadPolicy {
@@ -34,10 +34,17 @@ object CloudUploadPolicy {
         data class AlreadyOn(override val state: State) : Resume()
     }
 
-    fun dayKey(epochMs: Long): String =
-        Instant.ofEpochMilli(epochMs).atZone(zone).toLocalDate().toString()
+    /**
+     * 睡眠日：上海时间中午 12:00 之前算前一天，避免一夜跨过零点就把恢复次数清掉。
+     * 12:00 整点起算新的一天。
+     */
+    fun dayKey(epochMs: Long): String {
+        val zoned = Instant.ofEpochMilli(epochMs).atZone(zone)
+        val date = if (zoned.hour < 12) zoned.toLocalDate().minusDays(1) else zoned.toLocalDate()
+        return date.toString()
+    }
 
-    /** 跨过上海日历日只清恢复次数，不停掉正在累计的脱落串，也不自动重新打开上传。 */
+    /** 跨过上海睡眠日（中午）只清恢复次数，不停掉正在累计的脱落串，也不自动重新打开上传。 */
     fun roll(state: State, epochMs: Long): State {
         val today = dayKey(epochMs)
         if (state.resumeDay == today) return state

@@ -25,6 +25,9 @@ import app.cpapmaskguard.capture.CaptureController
 import app.cpapmaskguard.capture.CameraTuning
 import app.cpapmaskguard.core.CloudUploadPolicy
 import app.cpapmaskguard.core.FrameVote
+import app.cpapmaskguard.core.GuardHealth
+import app.cpapmaskguard.core.GuardTelemetry
+import app.cpapmaskguard.core.SceneChange
 import app.cpapmaskguard.core.SnoreFusion
 import app.cpapmaskguard.detector.BaselineStore
 import app.cpapmaskguard.detector.MaskDetector
@@ -37,7 +40,6 @@ import app.cpapmaskguard.settings.SettingsStore
 import app.cpapmaskguard.FillLightActivity
 import app.cpapmaskguard.health.MonitorHealthScorer
 import app.cpapmaskguard.util.AppLogger
-import app.cpapmaskguard.util.LogMailer
 import java.io.File
 import java.io.FileOutputStream
 import java.time.Instant
@@ -71,6 +73,9 @@ class MonitorService : LifecycleService() {
     private var consecutiveFailures = 0
     private var roundCount = 0
     private var audioStarted = false
+    private var guardHealth = GuardHealth.State()
+    private var sceneWatch = SceneChange.State()
+    private var lastJudgmentElapsed = 0L
 
     override fun onCreate() {
         super.onCreate()
@@ -92,8 +97,13 @@ class MonitorService : LifecycleService() {
             AppLogger.e(LOG_TAG, "前台服务启动失败", error)
             settingsStore.setMonitoringRequested(false)
             alive.set(false)
-            publish(RunStatus.ERROR, "没能保持在前台", AppLogger.summarize(error))
-            LogMailer.sendLogEmail(this, "前台启动失败")
+            publish(RunStatus.ERROR, "守护已中断，点此恢复", "守护已中断，点此恢复。${AppLogger.summarize(error)}")
+            Notifications.notifyGuardFailure(
+                this,
+                "守护已中断，点此恢复",
+                AppLogger.summarize(error),
+                fullScreen = true,
+            )
             stopSelf()
             return START_NOT_STICKY
         }
@@ -167,12 +177,11 @@ class MonitorService : LifecycleService() {
                 val mode = settingsStore.settings().fillLightMode
                 AppLogger.e(LOG_TAG, "相机打开失败 mode=$mode", error)
                 val head = if (mode == FillLightMode.FRONT_SCREEN) "前摄打不开" else "相机打不开"
-                publish(
-                    RunStatus.ERROR,
-                    head,
-                    "${AppLogger.summarize(error)}。请到主界面「查看日志」；可改选「后摄 + 自备光源」或重试。",
-                )
-                LogMailer.sendLogEmail(this@MonitorService, "相机打开失败 mode=$mode")
+                val detail = "守护已中断，点此恢复。$head。${AppLogger.summarize(error)}。请回到主界面点开始守护；可改选「后摄 + 自备光源」或重试。"
+                publish(RunStatus.ERROR, "守护已中断，点此恢复", detail)
+                val step = GuardHealth.onCameraBindFailure(guardHealth)
+                guardHealth = step.state
+                Notifications.notifyGuardFailure(this@MonitorService, "守护已中断，点此恢复", detail, fullScreen = true)
                 return@launch
             }
             audioStarted = snore.start()
@@ -235,15 +244,20 @@ class MonitorService : LifecycleService() {
                         else -> null
                     }
                     val gate = cloudUpload.state(captureEpoch)
+                    val localOnly = !gate.uploadEnabled && gate.remaining() == 0
                     val decision = withContext(Dispatchers.Default) {
                         detector.onCapturedFile(
                             file,
                             cropOut,
                             uploadAllowed = gate.uploadEnabled,
-                            holdMaskOffAlarm = !gate.uploadEnabled && gate.lastCloudWasMaskOff,
+                            holdMaskOffAlarm = !gate.uploadEnabled && gate.lastCloudWasMaskOff && !localOnly,
+                            localFallback = localOnly,
+                            circuit = cloudUpload.circuit(),
                         )
                     }
-                    recordCloudGate(gate, decision, captureEpoch)
+                    cloudUpload.saveCircuit(decision.circuit)
+                    val updatedGate = recordCloudGate(gate, decision, captureEpoch)
+                    noteSceneChange(updatedGate, decision.aimSignature, captureEpoch)
                     val captureToJudgeMs = SystemClock.elapsedRealtime() - captureElapsed
                     val fused = SnoreFusion.fuse(
                         cameraShouldAlarm = decision.shouldAlarm,
@@ -265,6 +279,8 @@ class MonitorService : LifecycleService() {
                     MonitorRuntime.appendCaptureLog(uiLine)
                     file.delete()
                     consecutiveFailures = 0
+                    guardHealth = GuardHealth.onJudgment(guardHealth)
+                    lastJudgmentElapsed = SystemClock.elapsedRealtime()
                     roundCount += 1
                     MonitorHealthScorer.noteRoundSuccess(
                         inferMs = decision.inferMs,
@@ -276,10 +292,28 @@ class MonitorService : LifecycleService() {
                         AppLogger.i(LOG_TAG, MonitorHealthScorer.logLine(health))
                     } catch (_: Exception) {
                     }
+                    if (decision.promptTokens >= 0 || decision.completionTokens >= 0) {
+                        AppLogger.i(
+                            LOG_TAG,
+                            "usage #$roundCount prompt=${decision.promptTokens} completion=${decision.completionTokens}",
+                        )
+                    }
+                    val telemetry = GuardTelemetry.metricLine(
+                        kind = "round",
+                        epochMs = captureEpoch,
+                        detail = resultLabel,
+                        promptTokens = decision.promptTokens,
+                        completionTokens = decision.completionTokens,
+                    )
+                    AppLogger.i(LOG_TAG, telemetry)
+                    if (settingsStore.imageDonationEnabled()) {
+                        AppLogger.i(LOG_TAG, "图片捐赠已打开，但还没有上传地址，这一帧只记了指标")
+                    }
                     AppLogger.i(
                         LOG_TAG,
                         "延时 #$roundCount 拍摄=$timeText 判定=$resultLabel vote=${decision.vote} " +
                             "infer=${decision.inferMs}ms 拍到判定=${captureToJudgeMs}ms 整轮=${spent}ms " +
+                            "usage=${decision.promptTokens}/${decision.completionTokens} " +
                             "previewOn=$previewOn torchWant=$wantTorch torchOn=${capture.torchEnabled} " +
                             "· ${decision.summary}",
                     )
@@ -320,6 +354,7 @@ class MonitorService : LifecycleService() {
                         delay(slice)
                         left -= slice
                         if (maybeAudioOnlyAlarm()) break
+                        noteStall()
                     }
                 }
             }
@@ -432,6 +467,14 @@ class MonitorService : LifecycleService() {
     /** 对准失败用软提示，不写成脱落。暂停上传时，只有仍按上次脱落在响才标脱落。 */
     private fun previewResultLabel(decision: MaskDetector.FrameDecision, alarmed: Boolean): String {
         if (decision.aimInvalid && !alarmed) return "镜头可能没对准"
+        if (decision.localOnly && !alarmed) {
+            return when (decision.vote) {
+                FrameVote.CLOSER_TO_MASK_ON -> "面罩正常"
+                FrameVote.CLOSER_TO_MASK_OFF -> "面罩脱落"
+                FrameVote.NO_PERSON -> "未检测到人"
+                FrameVote.UNCERTAIN -> "本机兜底"
+            }
+        }
         if (decision.cloudSkipped && !alarmed) return "已暂停上传"
         if (alarmed) return "面罩脱落"
         return when (decision.vote) {
@@ -446,7 +489,7 @@ class MonitorService : LifecycleService() {
         before: CloudUploadPolicy.State,
         decision: MaskDetector.FrameDecision,
         epochMs: Long,
-    ) {
+    ): CloudUploadPolicy.State {
         val vote = decision.cloudVote
         val updated = when {
             decision.aimInvalid -> cloudUpload.noteAimInvalid(epochMs)
@@ -457,11 +500,53 @@ class MonitorService : LifecycleService() {
             }
         }
         if (before.uploadEnabled && !updated.uploadEnabled) {
+            sceneWatch = SceneChange.State()
             AppLogger.i(
                 LOG_TAG,
-                "连续 ${updated.consecutiveMaskOff} 次云端面罩脱落，已停止上传。今日还可恢复 ${updated.remaining()} 次",
+                "连续 ${updated.consecutiveMaskOff} 次云端面罩脱落，已停止上传。今晚还可恢复 ${updated.remaining()} 次",
             )
         }
+        return updated
+    }
+
+    /** 暂停期间画面明显变化，连续多帧确认后自动恢复上传一次。次数用尽就停在本机兜底。 */
+    private fun noteSceneChange(
+        gate: CloudUploadPolicy.State,
+        signature: List<Float>,
+        epochMs: Long,
+    ) {
+        if (gate.uploadEnabled) {
+            sceneWatch = SceneChange.State()
+            return
+        }
+        val step = SceneChange.observe(sceneWatch, signature)
+        sceneWatch = step.state
+        if (!step.resume) return
+        when (val outcome = cloudUpload.resume(epochMs)) {
+            is CloudUploadPolicy.Resume.Accepted -> {
+                sceneWatch = SceneChange.State()
+                AppLogger.i(LOG_TAG, "画面变化已确认，自动恢复上传一次。今晚还可恢复 ${outcome.state.remaining()} 次")
+            }
+            is CloudUploadPolicy.Resume.Denied -> {
+                sceneWatch = sceneWatch.copy(usedThisPause = true)
+                AppLogger.i(LOG_TAG, "画面有变化，但今晚恢复次数已用完，继续本机兜底")
+            }
+            is CloudUploadPolicy.Resume.AlreadyOn -> sceneWatch = SceneChange.State()
+        }
+    }
+
+    private fun noteStall() {
+        val step = GuardHealth.onTick(
+            guardHealth,
+            lastJudgmentElapsedMs = lastJudgmentElapsed,
+            nowElapsedMs = SystemClock.elapsedRealtime(),
+            intervalMs = effectiveIntervalMs(),
+        )
+        guardHealth = step.state
+        if (!step.justTripped) return
+        val reason = "超过 ${GuardHealth.STALL_INTERVALS} 个抓拍间隔没有新的判定"
+        publish(RunStatus.ERROR, "守护失效", reason, capture.nightExtension, snoreHint = snore.lastHint)
+        Notifications.notifyGuardFailure(this, "守护失效", reason, fullScreen = false)
     }
 
     private fun formatCaptureClock(epochMs: Long): String {
@@ -472,12 +557,16 @@ class MonitorService : LifecycleService() {
     private fun noteFailure(message: String) {
         consecutiveFailures += 1
         MonitorHealthScorer.noteRoundFailure()
+        val step = GuardHealth.onJudgmentFailure(guardHealth, System.currentTimeMillis())
+        guardHealth = step.state
         AppLogger.w(LOG_TAG, "监测轮次失败 #$consecutiveFailures: $message")
-        val status = if (consecutiveFailures >= 5) RunStatus.ERROR else RunStatus.MONITORING
-        val headline = if (consecutiveFailures >= 5) "请先摆好手机" else "正在确认面罩"
-        publish(status, headline, message, capture.nightExtension, snoreHint = snore.lastHint)
-        if (consecutiveFailures >= 5) {
-            LogMailer.sendLogEmail(this, "连续失败>=5")
+        val tripped = step.state.tripped && step.state.reason == GuardHealth.Reason.JUDGMENT
+        val status = if (tripped) RunStatus.ERROR else RunStatus.MONITORING
+        val headline = if (tripped) "守护失效" else "正在确认面罩"
+        val detail = if (tripped) "连续判定失败。$message" else message
+        publish(status, headline, detail, capture.nightExtension, snoreHint = snore.lastHint)
+        if (step.justTripped) {
+            Notifications.notifyGuardFailure(this, "守护失效", "连续判定失败。$message", fullScreen = false)
         }
     }
 

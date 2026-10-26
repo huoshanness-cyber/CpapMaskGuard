@@ -13,8 +13,8 @@ android {
         applicationId = "app.cpapmaskguard"
         minSdk = 26
         targetSdk = 37
-        versionCode = 20
-        versionName = "0.4.0"
+        versionCode = 21
+        versionName = "0.4.1"
 
         val localProps = Properties()
         val localFile = rootProject.file("local.properties")

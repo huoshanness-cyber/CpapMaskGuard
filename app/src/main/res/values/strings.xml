@@ -15,11 +15,11 @@
     <string name="stop_alarm_short">停止提醒</string>
     <string name="need_baseline_first">先认一下面罩</string>
     <string name="aim_soft_hint">镜头可能没对准。这一张没有上传，守护还在。</string>
-    <string name="upload_paused_detail">连续看到面罩脱落，已停止上传。守护还在，铃声仍按上次结果。可点「恢复上传」。</string>
-    <string name="resume_upload">恢复上传</string>
-    <string name="resume_remaining">今日还可恢复上传 %1$d 次</string>
-    <string name="resume_exhausted">今天的恢复次数已用完。守护和铃声仍会继续，只是不再上传画面。</string>
-    <string name="resume_accepted">已恢复上传，今日还可恢复 %1$d 次</string>
+    <string name="upload_paused_detail">连续看到面罩脱落，已停止上传。守护还在，铃声仍按上次结果。戴好了就点「我戴好了」。</string>
+    <string name="resume_upload">我戴好了</string>
+    <string name="resume_remaining">今晚还可恢复上传 %1$d 次（中午重置）</string>
+    <string name="resume_exhausted">今晚的恢复次数已用完。继续本机判断和听鼾，不再上传画面。</string>
+    <string name="resume_accepted">已恢复上传，今晚还可恢复 %1$d 次</string>
     <string name="resume_already">上传本来就是开着的</string>
     <string name="alarm_detail">请先戴回面罩，再点停止提醒。守护会继续。</string>
     <string name="alarm_detail_aim">请先戴回面罩，再点停止提醒。守护会继续。这一张镜头可能没对准，没有上传。</string>

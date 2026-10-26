@@ -9,6 +9,8 @@ struct ArchivePayload {
     var fillMode: String
     var reason: String
     var jpeg: Data
+    var promptTokens: Int = -1
+    var completionTokens: Int = -1
 }
 
 struct ArchiveItem: Identifiable {
@@ -33,7 +35,7 @@ enum FrameArchive {
             let jpegURL = folder.appendingPathComponent("\(stem).jpg")
             let jsonURL = folder.appendingPathComponent("\(stem).json")
             try payload.jpeg.write(to: jpegURL, options: .atomic)
-            let object: [String: Any] = [
+            var object: [String: Any] = [
                 "capturedAt": isoString(payload.capturedAt),
                 "result": payload.result,
                 "vote": payload.vote,
@@ -42,6 +44,8 @@ enum FrameArchive {
                 "fillMode": payload.fillMode,
                 "reason": payload.reason,
             ]
+            if payload.promptTokens >= 0 { object["promptTokens"] = payload.promptTokens }
+            if payload.completionTokens >= 0 { object["completionTokens"] = payload.completionTokens }
             let json = try JSONSerialization.data(withJSONObject: object, options: [.prettyPrinted])
             try json.write(to: jsonURL, options: .atomic)
             prune(folder)

@@ -1,3 +1,4 @@
+import AudioToolbox
 import AVFoundation
 import Combine
 import os
@@ -15,6 +16,7 @@ struct CaptureReadout: Equatable {
     var roundMs: Int
     var aimMissed: Bool = false
     var cloudPaused: Bool = false
+    var localOnly: Bool = false
 }
 
 @MainActor
@@ -45,6 +47,8 @@ final class GuardModel: ObservableObject {
     @Published private(set) var logs: [SessionLogLine] = []
     @Published var uploadEnabled = true
     @Published var resumeRemaining = CloudUploadPolicy.dailyResumeLimit
+    @Published var judgmentAgeSeconds = -1
+    @Published var watchdogStale = false
 
     private let torch = RearTorch()
     private let cloudMemory = CloudUploadMemory()
@@ -60,6 +64,9 @@ final class GuardModel: ObservableObject {
     private var consecutiveFailures = 0
     private var cameraLive = false
     private var monitorTask: Task<Void, Never>?
+    private var guardHealth = GuardHealthState()
+    private var sceneWatch = SceneWatch()
+    private var lastJudgmentAt: Date?
 
     init() {
         let defaults = UserDefaults.standard
@@ -93,6 +100,7 @@ final class GuardModel: ObservableObject {
     var displayResult: String {
         guard let lastReadout else { return "" }
         if lastReadout.aimMissed { return l10n.aimSoftResult }
+        if lastReadout.localOnly && !lastReadout.alarmed && !alarming { return l10n.localOnlyResult }
         if lastReadout.cloudPaused && !lastReadout.alarmed && !alarming { return l10n.pausedResult }
         if lastReadout.unjudged { return l10n.unjudged }
         return l10n.resultLabel(lastReadout.vote ?? .uncertain, alarmed: lastReadout.alarmed || alarming)
@@ -101,6 +109,7 @@ final class GuardModel: ObservableObject {
     var displayReason: String {
         guard let lastReadout else { return "" }
         if lastReadout.aimMissed { return l10n.aimSoftHint }
+        if lastReadout.localOnly { return l10n.resumeExhausted }
         if lastReadout.cloudPaused { return l10n.pausedReason }
         if lastReadout.unjudged { return l10n.noKeyReason }
         return l10n.cloudReason(lastReadout.vote ?? .uncertain, raw: lastReadout.raw)
@@ -214,6 +223,10 @@ final class GuardModel: ObservableObject {
         roundNote = nil
         permissionNote = nil
         consecutiveFailures = 0
+        guardHealth = GuardHealthState()
+        lastJudgmentAt = nil
+        judgmentAgeSeconds = -1
+        watchdogStale = false
         debouncer.reset()
         ignoreUntil = nil
         health = nil
@@ -228,10 +241,7 @@ final class GuardModel: ObservableObject {
             record(l10n.logCameraDenied)
             return
         }
-        if !isForeground {
-            await leaveForeground()
-            return
-        }
+        guard await waitUntilInteractive(token) else { return }
 
         let position: AVCaptureDevice.Position = fillMode == .frontScreen ? .front : .back
         let torchOn = fillMode == .rearAmbient && torchEnabled
@@ -243,15 +253,13 @@ final class GuardModel: ObservableObject {
             cameraLive = false
             phase = .idle
             let message = l10n.failureMessage(error)
-            roundNote = message
-            record(message)
+            roundNote = l10n.guardInterrupted
+            record("\(l10n.guardInterrupted) \(message)")
             UIApplication.shared.isIdleTimerDisabled = false
+            alertGuard(title: l10n.guardInterrupted, body: message)
             return
         }
-        guard token == transition, isForeground else {
-            await leaveForeground()
-            return
-        }
+        guard await waitUntilInteractive(token) else { return }
 
         phase = .guarding
         UIApplication.shared.isIdleTimerDisabled = true
@@ -263,10 +271,7 @@ final class GuardModel: ObservableObject {
         }
         record(l10n.logStarted)
         warnIfVolumeLow()
-        guard token == transition, isForeground else {
-            await leaveForeground()
-            return
-        }
+        guard await waitUntilInteractive(token) else { return }
         launchLoop(token: token)
         Task { [weak self] in
             await self?.prepareSideChannels()
@@ -324,7 +329,16 @@ final class GuardModel: ObservableObject {
         }
     }
 
+    func resumeLoopIfStillGuarding() {
+        guard phase == .guarding else { return }
+        if monitorTask == nil {
+            launchLoop(token: transition)
+            record(l10n.logResumedAfterInactive)
+        }
+    }
+
     func resumeUpload() {
+        sceneWatch = SceneWatch()
         switch cloudMemory.resume(now: Date()) {
         case .accepted(let state):
             publishCloud(state)
@@ -477,7 +491,9 @@ final class GuardModel: ObservableObject {
 
     private func runMonitor(token: Int) async {
         while !Task.isCancelled {
+            if !(await pauseIfInactive(token)) { return }
             guard stillGuarding(token) else { return }
+            tickWatchdog()
             let started = Date()
             do {
                 if fillMode == .rearAmbient {
@@ -491,36 +507,31 @@ final class GuardModel: ObservableObject {
                 guard let payload = ImageEncode.jpegForCloud(raw) else {
                     throw CaptureError.empty
                 }
-                let aimed = await aimIsValid(payload)
+                let scan = await aimScan(payload)
                 guard stillGuarding(token) else { return }
-                if !aimed {
+                if !scan.verdict.valid {
                     let updated = cloudMemory.noteAimInvalid(now: capturedAt)
                     publishCloud(updated)
                     publishAimMiss(payload: payload, capturedAt: capturedAt, started: started)
                 } else if !AppSecrets.hasMinimaxKey {
                     publishUnjudged(payload: payload, capturedAt: capturedAt, started: started)
-                } else if !cloudMemory.load(now: capturedAt).uploadEnabled {
-                    publishCloudPaused(payload: payload, capturedAt: capturedAt, started: started)
                 } else {
-                    let classifyStarted = Date()
-                    let classified = try await MiniMaxClient.classify(
-                        jpeg: payload,
-                        apiKey: AppSecrets.minimaxAPIKey,
-                        endpoint: AppSecrets.minimaxEndpoint
-                    )
-                    guard stillGuarding(token) else { return }
-                    let updated = cloudMemory.noteCloud(classified.vote, now: capturedAt)
-                    publishCloud(updated)
-                    if !updated.uploadEnabled {
-                        record(l10n.uploadStopped(updated.consecutiveMaskOff, CloudUploadPolicy.remaining(updated)))
+                    let state = cloudMemory.load(now: capturedAt)
+                    if !state.uploadEnabled {
+                        if CloudUploadPolicy.remaining(state) == 0 {
+                            publishLocalOnly(payload: payload, capturedAt: capturedAt, started: started)
+                        } else {
+                            publishCloudPaused(payload: payload, capturedAt: capturedAt, started: started)
+                        }
+                        considerAutoResume(scan.signature, now: capturedAt)
+                    } else {
+                        try await classifyOrSkip(
+                            payload: payload,
+                            capturedAt: capturedAt,
+                            started: started,
+                            token: token
+                        )
                     }
-                    publishClassified(
-                        classified,
-                        jpeg: payload,
-                        capturedAt: capturedAt,
-                        classifyStarted: classifyStarted,
-                        started: started
-                    )
                 }
             } catch {
                 guard stillGuarding(token) else { return }
@@ -531,6 +542,7 @@ final class GuardModel: ObservableObject {
             let spent = Date().timeIntervalSince(started)
             var left = Double(intervalSeconds) - spent
             while left > 0 {
+                if !(await pauseIfInactive(token)) { return }
                 let slice = min(left, 1.5)
                 do {
                     try await Task.sleep(nanoseconds: UInt64(slice * 1_000_000_000))
@@ -538,19 +550,96 @@ final class GuardModel: ObservableObject {
                     return
                 }
                 guard stillGuarding(token) else { return }
+                tickWatchdog()
                 maybeAudioOnlyAlarm()
                 left -= slice
             }
         }
     }
 
-    private func aimIsValid(_ jpeg: Data) async -> Bool {
-        guard let image = UIImage(data: jpeg)?.cgImage else { return false }
+    private func classifyOrSkip(payload: Data, capturedAt: Date, started: Date, token: Int) async throws {
+        var circuit = loadCircuit()
+        let action = CloudCircuitPolicy.action(circuit, now: capturedAt)
+        if action == .local {
+            publishCircuitSkip(payload: payload, capturedAt: capturedAt, started: started)
+            return
+        }
+        if action == .probe {
+            circuit = CloudCircuitPolicy.noteProbe(circuit, now: capturedAt)
+            saveCircuit(circuit)
+            record(l10n.cloudProbe)
+        }
+        let classifyStarted = Date()
+        do {
+            let classified = try await MiniMaxClient.classify(
+                jpeg: payload,
+                apiKey: AppSecrets.minimaxAPIKey,
+                endpoint: AppSecrets.minimaxEndpoint
+            )
+            guard stillGuarding(token) else { return }
+            saveCircuit(CloudCircuitPolicy.onSuccess(circuit))
+            let updated = cloudMemory.noteCloud(classified.vote, now: capturedAt)
+            publishCloud(updated)
+            if !updated.uploadEnabled {
+                sceneWatch = SceneWatch()
+                record(l10n.uploadStopped(updated.consecutiveMaskOff, CloudUploadPolicy.remaining(updated)))
+            }
+            publishClassified(
+                classified,
+                jpeg: payload,
+                capturedAt: capturedAt,
+                classifyStarted: classifyStarted,
+                started: started
+            )
+        } catch {
+            saveCircuit(CloudCircuitPolicy.onFailure(circuit, now: Date()))
+            throw error
+        }
+    }
+
+    private func aimScan(_ jpeg: Data) async -> AimScan {
+        guard let image = UIImage(data: jpeg)?.cgImage else {
+            return AimScan(
+                verdict: AimVerdict(valid: false, reason: .black),
+                signature: []
+            )
+        }
         return await withCheckedContinuation { continuation in
             DispatchQueue.global(qos: .userInitiated).async {
-                continuation.resume(returning: AimScanner.evaluate(image).valid)
+                continuation.resume(returning: AimScanner.evaluate(image))
             }
         }
+    }
+
+    /// `.inactive` pauses the capture loop. It does not leave the guard.
+    private func pauseIfInactive(_ token: Int) async -> Bool {
+        while UIApplication.shared.applicationState == .inactive {
+            if !stillGuarding(token) { return false }
+            tickWatchdog()
+            do {
+                try await Task.sleep(nanoseconds: 300_000_000)
+            } catch {
+                return false
+            }
+        }
+        return stillGuarding(token)
+    }
+
+    private func waitUntilInteractive(_ token: Int) async -> Bool {
+        while UIApplication.shared.applicationState == .inactive {
+            if token != transition { return false }
+            do {
+                try await Task.sleep(nanoseconds: 200_000_000)
+            } catch {
+                return false
+            }
+        }
+        if token != transition { return false }
+        if UIApplication.shared.applicationState == .background {
+            await leaveForeground()
+            return false
+        }
+        return true
     }
 
     private func publishCloud(_ state: CloudUploadState) {
@@ -574,6 +663,7 @@ final class GuardModel: ObservableObject {
         lastThumbnail = UIImage(data: payload)
         roundNote = l10n.aimSoftHint
         consecutiveFailures = 0
+        markJudgment(capturedAt)
         health = HealthMath.score(
             captureToJudgeMs: roundMs,
             roundMs: roundMs,
@@ -619,6 +709,7 @@ final class GuardModel: ObservableObject {
         lastThumbnail = UIImage(data: payload)
         roundNote = nil
         consecutiveFailures = 0
+        markJudgment(capturedAt)
         let result = hold ? l10n.resultLabel(.maskOff, alarmed: true) : l10n.pausedResult
         let line = l10n.logRound(
             time: SessionLogClock.precise(from: capturedAt),
@@ -679,6 +770,7 @@ final class GuardModel: ObservableObject {
         lastThumbnail = UIImage(data: jpeg)
         roundNote = nil
         consecutiveFailures = 0
+        markJudgment(capturedAt)
         health = HealthMath.score(
             captureToJudgeMs: captureToJudgeMs,
             roundMs: roundMs,
@@ -686,6 +778,13 @@ final class GuardModel: ObservableObject {
             language: language
         )
         let result = l10n.resultLabel(classified.vote, alarmed: alarmed)
+        if classified.promptTokens >= 0 || classified.completionTokens >= 0 {
+            record("usage prompt=\(classified.promptTokens) completion=\(classified.completionTokens)")
+        }
+        record(l10n.telemetry(prompt: classified.promptTokens, completion: classified.completionTokens))
+        if imageDonationEnabled {
+            record(l10n.donationPending)
+        }
         let line = l10n.logRound(
             time: SessionLogClock.precise(from: capturedAt),
             result: result,
@@ -702,7 +801,9 @@ final class GuardModel: ObservableObject {
             roundMs: roundMs,
             fillMode: fillMode.rawValue,
             reason: summary,
-            jpeg: jpeg
+            jpeg: jpeg,
+            promptTokens: classified.promptTokens,
+            completionTokens: classified.completionTokens
         ))
         guard alarmed else { return }
         debouncer.reset()
@@ -724,6 +825,7 @@ final class GuardModel: ObservableObject {
         lastThumbnail = UIImage(data: payload)
         roundNote = l10n.noKeyReason
         consecutiveFailures = 0
+        markJudgment(capturedAt)
         let line = l10n.logRound(
             time: SessionLogClock.precise(from: capturedAt),
             result: l10n.unjudged,
@@ -756,8 +858,11 @@ final class GuardModel: ObservableObject {
             consecutiveFailures: consecutiveFailures,
             language: language
         )
-        if consecutiveFailures == 5 {
-            record(l10n.logManyFailures)
+        let step = GuardHealthPolicy.onJudgmentFailure(guardHealth, now: Date())
+        guardHealth = step.state
+        if step.justTripped {
+            roundNote = "\(l10n.guardFailedTitle) \(message)"
+            alertGuard(title: l10n.guardFailedTitle, body: message)
         }
     }
 
@@ -838,6 +943,15 @@ final class GuardModel: ObservableObject {
         try? await UNUserNotificationCenter.current().add(request)
     }
 
+    private func postGuardNotification(title: String, body: String) async {
+        let content = UNMutableNotificationContent()
+        content.title = title
+        content.body = body
+        content.sound = .default
+        let request = UNNotificationRequest(identifier: "guard-failed", content: content, trigger: nil)
+        try? await UNUserNotificationCenter.current().add(request)
+    }
+
     private func postLeftNotification() async {
         let content = UNMutableNotificationContent()
         content.title = l10n.notifyLeftTitle
@@ -848,7 +962,139 @@ final class GuardModel: ObservableObject {
     }
 
     private func stillGuarding(_ token: Int) -> Bool {
-        token == transition && phase == .guarding && isForeground && !Task.isCancelled
+        token == transition && phase == .guarding && !isBackground && !Task.isCancelled
+    }
+
+    private var isBackground: Bool {
+        UIApplication.shared.applicationState == .background
+    }
+
+    private func markJudgment(_ date: Date) {
+        lastJudgmentAt = date
+        judgmentAgeSeconds = max(0, Int(Date().timeIntervalSince(date)))
+        watchdogStale = false
+        guardHealth = GuardHealthPolicy.onJudgment(guardHealth)
+    }
+
+    private func tickWatchdog() {
+        guard phase == .guarding else { return }
+        guard let last = lastJudgmentAt else {
+            judgmentAgeSeconds = -1
+            watchdogStale = false
+            return
+        }
+        let age = max(0, Int(Date().timeIntervalSince(last)))
+        judgmentAgeSeconds = age
+        let stale = GuardHealthPolicy.stalled(since: last, now: Date(), intervalSeconds: intervalSeconds)
+        if stale && !watchdogStale {
+            AudioServicesPlaySystemSound(kSystemSoundID_Vibrate)
+            if !guardHealth.tripped {
+                let text = l10n.guardStalled
+                roundNote = text
+                record(text)
+                guardHealth.tripped = true
+                guardHealth.reason = .stall
+                alertGuard(title: l10n.guardFailedTitle, body: text)
+            }
+        }
+        watchdogStale = stale
+    }
+
+    private func alertGuard(title: String, body: String) {
+        AudioServicesPlaySystemSound(1007)
+        let note = body
+        Task { await postGuardNotification(title: title, body: note) }
+    }
+
+    private func publishLocalOnly(payload: Data, capturedAt: Date, started: Date) {
+        let roundMs = MonitorClock.milliseconds(since: started)
+        lastReadout = CaptureReadout(
+            capturedAt: capturedAt,
+            vote: .uncertain,
+            raw: "",
+            alarmed: false,
+            unjudged: false,
+            inferMs: 0,
+            captureToJudgeMs: roundMs,
+            roundMs: roundMs,
+            localOnly: true
+        )
+        lastThumbnail = UIImage(data: payload)
+        roundNote = l10n.resumeExhausted
+        consecutiveFailures = 0
+        markJudgment(capturedAt)
+        record(l10n.logRound(
+            time: SessionLogClock.precise(from: capturedAt),
+            result: l10n.localOnlyResult,
+            inferMs: 0,
+            captureToJudgeMs: roundMs,
+            roundMs: roundMs
+        ))
+        record(l10n.telemetry(prompt: -1, completion: -1))
+        maybeAudioOnlyAlarm()
+    }
+
+    private func publishCircuitSkip(payload: Data, capturedAt: Date, started: Date) {
+        let roundMs = MonitorClock.milliseconds(since: started)
+        lastReadout = CaptureReadout(
+            capturedAt: capturedAt,
+            vote: .uncertain,
+            raw: "",
+            alarmed: false,
+            unjudged: false,
+            inferMs: 0,
+            captureToJudgeMs: roundMs,
+            roundMs: roundMs
+        )
+        lastThumbnail = UIImage(data: payload)
+        roundNote = l10n.circuitLocal
+        consecutiveFailures = 0
+        markJudgment(capturedAt)
+        record(l10n.circuitLocal)
+        record(l10n.telemetry(prompt: -1, completion: -1))
+        maybeAudioOnlyAlarm()
+    }
+
+    private func considerAutoResume(_ signature: [Float], now: Date) {
+        let step = SceneChangePolicy.observe(sceneWatch, signature: signature)
+        sceneWatch = step.0
+        guard step.1 else { return }
+        switch cloudMemory.resume(now: now) {
+        case .accepted(let state):
+            sceneWatch = SceneWatch()
+            publishCloud(state)
+            let text = l10n.autoResumed(CloudUploadPolicy.remaining(state))
+            roundNote = text
+            record(text)
+        case .denied(let state):
+            sceneWatch.usedThisPause = true
+            publishCloud(state)
+            roundNote = l10n.resumeExhausted
+            record(l10n.resumeExhausted)
+        case .alreadyOn(let state):
+            sceneWatch = SceneWatch()
+            publishCloud(state)
+        }
+    }
+
+    private func loadCircuit() -> CloudCircuitState {
+        let defaults = UserDefaults.standard
+        return CloudCircuitState(
+            consecutiveFailures: max(0, defaults.integer(forKey: Key.circuitFails)),
+            openUntil: Date(timeIntervalSince1970: defaults.double(forKey: Key.circuitOpen)),
+            lastProbe: Date(timeIntervalSince1970: defaults.double(forKey: Key.circuitProbe))
+        )
+    }
+
+    private func saveCircuit(_ state: CloudCircuitState) {
+        let defaults = UserDefaults.standard
+        defaults.set(state.consecutiveFailures, forKey: Key.circuitFails)
+        defaults.set(state.openUntil.timeIntervalSince1970, forKey: Key.circuitOpen)
+        defaults.set(state.lastProbe.timeIntervalSince1970, forKey: Key.circuitProbe)
+    }
+
+    private var imageDonationEnabled: Bool {
+        UserDefaults.standard.bool(forKey: Key.imageDonation)
     }
 
     private func warnIfVolumeLow() {
@@ -966,6 +1212,10 @@ final class GuardModel: ObservableObject {
         static let brightness = "guard.screenBrightness"
         static let torchLevel = "guard.torchLevel"
         static let interval = "guard.intervalSeconds"
+        static let circuitFails = "cloud_circuit_fails"
+        static let circuitOpen = "cloud_circuit_open_until"
+        static let circuitProbe = "cloud_circuit_last_probe"
+        static let imageDonation = "image_donation_enabled"
     }
 }
 
