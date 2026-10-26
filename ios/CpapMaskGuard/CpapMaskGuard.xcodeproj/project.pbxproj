@@ -1,0 +1,481 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 77;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		09969E33F24E84F620A09BFC /* Theme.swift in Sources */ = {isa = PBXBuildFile; fileRef = 67CDE4A249460EEED3B8A44C /* Theme.swift */; };
+		173ED01886488B4343743207 /* PlaceholderPage.swift in Sources */ = {isa = PBXBuildFile; fileRef = 10B56CC7B3A358870B3AA3F1 /* PlaceholderPage.swift */; };
+		2DA897BB57F7776D90D45DD1 /* CpapMaskGuardApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0B2B43C8F108D974949D6C92 /* CpapMaskGuardApp.swift */; };
+		36F98B27B0DBAE74E3A87533 /* MainScreenUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 392AAB29AE5FB465BA00CD59 /* MainScreenUITests.swift */; };
+		3DC7F5B86654DEB8EFF53B75 /* RootView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6D72515D71852295B3610D17 /* RootView.swift */; };
+		4523A3B4A855C9CCB33BCACA /* AppSecrets.swift in Sources */ = {isa = PBXBuildFile; fileRef = C72A55F219DF98D4DB2D6D71 /* AppSecrets.swift */; };
+		5637D8326A013390202699AD /* L10n.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3E1369DE5B4C44A7D60B0531 /* L10n.swift */; };
+		68328B9E7AD0B7B6C58D5D1C /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = B399E47C23B085731A2778D2 /* Assets.xcassets */; };
+		AFE04D1A8CD0175B2563140B /* GuardModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = D9F5E2D0D2BA8D5674ACB935 /* GuardModel.swift */; };
+		B8B246EF09F655F093CB404C /* SettingsPanel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 15CC62817618B16513F2C3D5 /* SettingsPanel.swift */; };
+		BF1294F354B28F409E77CC2C /* RearTorch.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6A08A01C3211E141ED38B87C /* RearTorch.swift */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXContainerItemProxy section */
+		CFF4BD9E651DE5CE2100A179 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 47ECA245ED43767581B15AFE /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 28C285789413E073E7ACC025;
+			remoteInfo = CpapMaskGuard;
+		};
+/* End PBXContainerItemProxy section */
+
+/* Begin PBXFileReference section */
+		0B2B43C8F108D974949D6C92 /* CpapMaskGuardApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CpapMaskGuardApp.swift; sourceTree = "<group>"; };
+		10B56CC7B3A358870B3AA3F1 /* PlaceholderPage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlaceholderPage.swift; sourceTree = "<group>"; };
+		15CC62817618B16513F2C3D5 /* SettingsPanel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsPanel.swift; sourceTree = "<group>"; };
+		392AAB29AE5FB465BA00CD59 /* MainScreenUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MainScreenUITests.swift; sourceTree = "<group>"; };
+		3E1369DE5B4C44A7D60B0531 /* L10n.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = L10n.swift; sourceTree = "<group>"; };
+		49334C781896AE2996722374 /* Debug.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Debug.xcconfig; sourceTree = "<group>"; };
+		6415D255ACC5A1C0521CE4BE /* CpapMaskGuard.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = CpapMaskGuard.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		67CDE4A249460EEED3B8A44C /* Theme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Theme.swift; sourceTree = "<group>"; };
+		6A08A01C3211E141ED38B87C /* RearTorch.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RearTorch.swift; sourceTree = "<group>"; };
+		6D72515D71852295B3610D17 /* RootView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RootView.swift; sourceTree = "<group>"; };
+		A5B54E9E30AB0EBAE55716F5 /* CpapMaskGuardUITests.xctest */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.cfbundle; path = CpapMaskGuardUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		B399E47C23B085731A2778D2 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		C72A55F219DF98D4DB2D6D71 /* AppSecrets.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppSecrets.swift; sourceTree = "<group>"; };
+		D9F5E2D0D2BA8D5674ACB935 /* GuardModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GuardModel.swift; sourceTree = "<group>"; };
+		F89BD5DF246AFEE121BCD79C /* Release.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Release.xcconfig; sourceTree = "<group>"; };
+/* End PBXFileReference section */
+
+/* Begin PBXGroup section */
+		20DD78BF8BFEAEE90727FEE3 /* CpapMaskGuardUITests */ = {
+			isa = PBXGroup;
+			children = (
+				392AAB29AE5FB465BA00CD59 /* MainScreenUITests.swift */,
+			);
+			path = CpapMaskGuardUITests;
+			sourceTree = "<group>";
+		};
+		7E35D99817212EFDA89CC075 = {
+			isa = PBXGroup;
+			children = (
+				ECC4655F765B7C1AFEED2205 /* Config */,
+				DDCEB18E01BEDCE53BD8EF6E /* CpapMaskGuard */,
+				20DD78BF8BFEAEE90727FEE3 /* CpapMaskGuardUITests */,
+				C9596F8C973AE51EE3D06037 /* Products */,
+			);
+			sourceTree = "<group>";
+		};
+		C9596F8C973AE51EE3D06037 /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				6415D255ACC5A1C0521CE4BE /* CpapMaskGuard.app */,
+				A5B54E9E30AB0EBAE55716F5 /* CpapMaskGuardUITests.xctest */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+		DDCEB18E01BEDCE53BD8EF6E /* CpapMaskGuard */ = {
+			isa = PBXGroup;
+			children = (
+				C72A55F219DF98D4DB2D6D71 /* AppSecrets.swift */,
+				B399E47C23B085731A2778D2 /* Assets.xcassets */,
+				0B2B43C8F108D974949D6C92 /* CpapMaskGuardApp.swift */,
+				D9F5E2D0D2BA8D5674ACB935 /* GuardModel.swift */,
+				3E1369DE5B4C44A7D60B0531 /* L10n.swift */,
+				10B56CC7B3A358870B3AA3F1 /* PlaceholderPage.swift */,
+				6A08A01C3211E141ED38B87C /* RearTorch.swift */,
+				6D72515D71852295B3610D17 /* RootView.swift */,
+				15CC62817618B16513F2C3D5 /* SettingsPanel.swift */,
+				67CDE4A249460EEED3B8A44C /* Theme.swift */,
+			);
+			path = CpapMaskGuard;
+			sourceTree = "<group>";
+		};
+		ECC4655F765B7C1AFEED2205 /* Config */ = {
+			isa = PBXGroup;
+			children = (
+				49334C781896AE2996722374 /* Debug.xcconfig */,
+				F89BD5DF246AFEE121BCD79C /* Release.xcconfig */,
+			);
+			path = Config;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		28C285789413E073E7ACC025 /* CpapMaskGuard */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = E5D13E81F2A14F4A0C0D7E50 /* Build configuration list for PBXNativeTarget "CpapMaskGuard" */;
+			buildPhases = (
+				FAEC73AFA21385E23B6632E4 /* Sources */,
+				4C304A3669985255F3F4286C /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = CpapMaskGuard;
+			packageProductDependencies = (
+			);
+			productName = CpapMaskGuard;
+			productReference = 6415D255ACC5A1C0521CE4BE /* CpapMaskGuard.app */;
+			productType = "com.apple.product-type.application";
+		};
+		739F003B9B5016E7CB94B36B /* CpapMaskGuardUITests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = DE0EA0D1C14BFBE36D767A67 /* Build configuration list for PBXNativeTarget "CpapMaskGuardUITests" */;
+			buildPhases = (
+				79F9D8A86D90A8E9B052DCC5 /* Sources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				A6C465ADA58D3266665766F7 /* PBXTargetDependency */,
+			);
+			name = CpapMaskGuardUITests;
+			packageProductDependencies = (
+			);
+			productName = CpapMaskGuardUITests;
+			productReference = A5B54E9E30AB0EBAE55716F5 /* CpapMaskGuardUITests.xctest */;
+			productType = "com.apple.product-type.bundle.ui-testing";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		47ECA245ED43767581B15AFE /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = YES;
+				LastUpgradeCheck = 1430;
+				TargetAttributes = {
+					28C285789413E073E7ACC025 = {
+						DevelopmentTeam = H45MTM24C4;
+						ProvisioningStyle = Automatic;
+					};
+					739F003B9B5016E7CB94B36B = {
+						DevelopmentTeam = H45MTM24C4;
+						ProvisioningStyle = Automatic;
+						TestTargetID = 28C285789413E073E7ACC025;
+					};
+				};
+			};
+			buildConfigurationList = 52C0936E375A93ED403CB8A0 /* Build configuration list for PBXProject "CpapMaskGuard" */;
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				Base,
+				en,
+			);
+			mainGroup = 7E35D99817212EFDA89CC075;
+			minimizedProjectReferenceProxies = 1;
+			preferredProjectObjectVersion = 77;
+			productRefGroup = C9596F8C973AE51EE3D06037 /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				28C285789413E073E7ACC025 /* CpapMaskGuard */,
+				739F003B9B5016E7CB94B36B /* CpapMaskGuardUITests */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		4C304A3669985255F3F4286C /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				68328B9E7AD0B7B6C58D5D1C /* Assets.xcassets in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		79F9D8A86D90A8E9B052DCC5 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				36F98B27B0DBAE74E3A87533 /* MainScreenUITests.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		FAEC73AFA21385E23B6632E4 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				4523A3B4A855C9CCB33BCACA /* AppSecrets.swift in Sources */,
+				2DA897BB57F7776D90D45DD1 /* CpapMaskGuardApp.swift in Sources */,
+				AFE04D1A8CD0175B2563140B /* GuardModel.swift in Sources */,
+				5637D8326A013390202699AD /* L10n.swift in Sources */,
+				173ED01886488B4343743207 /* PlaceholderPage.swift in Sources */,
+				BF1294F354B28F409E77CC2C /* RearTorch.swift in Sources */,
+				3DC7F5B86654DEB8EFF53B75 /* RootView.swift in Sources */,
+				B8B246EF09F655F093CB404C /* SettingsPanel.swift in Sources */,
+				09969E33F24E84F620A09BFC /* Theme.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		A6C465ADA58D3266665766F7 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 28C285789413E073E7ACC025 /* CpapMaskGuard */;
+			targetProxy = CFF4BD9E651DE5CE2100A179 /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
+
+/* Begin XCBuildConfiguration section */
+		3B7EA9F7BAD6C1AA9D17F8E2 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			baseConfigurationReference = 49334C781896AE2996722374 /* Debug.xcconfig */;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
+				CLANG_CXX_LIBRARY = "libc++";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_TESTABILITY = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu11;
+				GCC_DYNAMIC_NO_PIC = NO;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"$(inherited)",
+					"DEBUG=1",
+				);
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
+				MTL_FAST_MATH = YES;
+				ONLY_ACTIVE_ARCH = YES;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 1;
+			};
+			name = Debug;
+		};
+		3BBB5BD3886773684B882830 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				DEVELOPMENT_TEAM = H45MTM24C4;
+				GENERATE_INFOPLIST_FILE = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = app.cpapmaskguard.uitests;
+				PRODUCT_MODULE_NAME = CpapMaskGuardUITests;
+				PRODUCT_NAME = CpapMaskGuardUITests;
+				SDKROOT = iphoneos;
+				TARGETED_DEVICE_FAMILY = 1;
+				TEST_TARGET_NAME = CpapMaskGuard;
+			};
+			name = Release;
+		};
+		416887359462226D88596284 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				DEVELOPMENT_TEAM = H45MTM24C4;
+				GENERATE_INFOPLIST_FILE = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = app.cpapmaskguard.uitests;
+				PRODUCT_MODULE_NAME = CpapMaskGuardUITests;
+				PRODUCT_NAME = CpapMaskGuardUITests;
+				SDKROOT = iphoneos;
+				TARGETED_DEVICE_FAMILY = 1;
+				TEST_TARGET_NAME = CpapMaskGuard;
+			};
+			name = Debug;
+		};
+		A176C15762D648C1F363DE3D /* Release */ = {
+			isa = XCBuildConfiguration;
+			baseConfigurationReference = F89BD5DF246AFEE121BCD79C /* Release.xcconfig */;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
+				CLANG_CXX_LIBRARY = "libc++";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				ENABLE_NS_ASSERTIONS = NO;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu11;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				MTL_ENABLE_DEBUG_INFO = NO;
+				MTL_FAST_MATH = YES;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SWIFT_COMPILATION_MODE = wholemodule;
+				SWIFT_OPTIMIZATION_LEVEL = "-O";
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 1;
+			};
+			name = Release;
+		};
+		A4F122FD24A099C0EED5083B /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_IDENTITY = "iPhone Developer";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = H45MTM24C4;
+				ENABLE_PREVIEWS = YES;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = CpapMaskGuard/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 0.3.7;
+				PRODUCT_BUNDLE_IDENTIFIER = app.cpapmaskguard;
+				PRODUCT_NAME = CpapMaskGuard;
+				SDKROOT = iphoneos;
+				SUPPORTS_MACCATALYST = NO;
+				SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD = NO;
+				SWIFT_STRICT_CONCURRENCY = minimal;
+				TARGETED_DEVICE_FAMILY = 1;
+			};
+			name = Release;
+		};
+		BB801300E60CDF02E1F31CD6 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_IDENTITY = "iPhone Developer";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = H45MTM24C4;
+				ENABLE_PREVIEWS = YES;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = CpapMaskGuard/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 0.3.7;
+				PRODUCT_BUNDLE_IDENTIFIER = app.cpapmaskguard;
+				PRODUCT_NAME = CpapMaskGuard;
+				SDKROOT = iphoneos;
+				SUPPORTS_MACCATALYST = NO;
+				SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD = NO;
+				SWIFT_STRICT_CONCURRENCY = minimal;
+				TARGETED_DEVICE_FAMILY = 1;
+			};
+			name = Debug;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		52C0936E375A93ED403CB8A0 /* Build configuration list for PBXProject "CpapMaskGuard" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				3B7EA9F7BAD6C1AA9D17F8E2 /* Debug */,
+				A176C15762D648C1F363DE3D /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		DE0EA0D1C14BFBE36D767A67 /* Build configuration list for PBXNativeTarget "CpapMaskGuardUITests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				416887359462226D88596284 /* Debug */,
+				3BBB5BD3886773684B882830 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		E5D13E81F2A14F4A0C0D7E50 /* Build configuration list for PBXNativeTarget "CpapMaskGuard" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				BB801300E60CDF02E1F31CD6 /* Debug */,
+				A4F122FD24A099C0EED5083B /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+/* End XCConfigurationList section */
+	};
+	rootObject = 47ECA245ED43767581B15AFE /* Project object */;
+}

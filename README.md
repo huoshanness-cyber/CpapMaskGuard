@@ -11,7 +11,7 @@
 
 **Detection:** online primary path is cloud vision (**MiniMax-M3**); offline fallback is an on-device **EfficientNet-Lite0** binary classifier (mask on / off).
 
-**Open-source and free** for global users. **Currently Android.**
+**Open-source and free** for global users. **Android is the full monitor.** iOS step 1 is a foreground shell (screen on): install and fill light only. Mask detection is not wired on iOS yet.
 
 ### Features
 
@@ -23,7 +23,7 @@
 - One-tap **Start Guard** / **Stop Guard**, status in plain language
 - **In-app language option: Chinese / English**
 - Optional snore cue as an assist signal
-- Open-source, free worldwide; Android version now
+- Open-source, free worldwide. Android monitors the mask. iOS step 1 is the foreground shell only.
 
 **Disclaimer:** Personal assistive tool only — not a medical device or diagnosis tool. Follow your clinician for sleep apnea care.
 
@@ -35,7 +35,7 @@
 
 **判定：**联网时主用云端看图（**MiniMax-M3**）；断网时用本机 **EfficientNet-Lite0** 二分类（戴着 / 脱落）兜底。
 
-**开源、全球免费**。**目前为安卓版。**
+**开源、全球免费**。**安卓版是完整监测。** iOS 第 1 步是亮屏前台壳：能安装、能补光，还没接面罩判定。
 
 ### 功能
 
@@ -47,7 +47,7 @@
 - 一键「开始守护 / 停止守护」，状态用人话显示
 - **应用内语言可切换：中文 / English**
 - 可选鼾声辅助信号
-- 开源免费；当前为安卓版
+- 开源免费。安卓版会判断面罩；iOS 第 1 步只有亮屏前台壳。
 
 **免责声明：**个人辅助用途，不是医疗器械，不能替代诊疗。请遵医嘱治疗睡眠呼吸暂停。
 
@@ -77,6 +77,53 @@
 
 用 Android Studio 打开工程；复制并填写 `local.properties`；可选写入 MiniMax Key；**不要提交**该文件。
 
+### iOS step 1 / 亮屏前台壳
+
+Project / 工程：`ios/CpapMaskGuard/CpapMaskGuard.xcodeproj`  
+Target device / 目标机：iPhone, including iPhone 17 Pro Max. Portrait only.
+
+This build does **not** keep the camera on in the background. Lock the screen or leave the app and the fill light stops. Mask detection, MiniMax calls, and log upload are later steps. There is no separate light-test app.
+
+这一步**不会**在后台一直开相机。锁屏或离开 App，补光就停。面罩判定、MiniMax、日志回传都还没做。没有单独的灯光测试 App。
+
+Scheme：`CpapMaskGuard`。Bundle id：`app.cpapmaskguard`。签名已写在工程里：**Automatically manage signing**，Team **敏敏 史 (Personal Team)** `H45MTM24C4`。模拟器实际用 ad-hoc 签名，不需要真机 UDID。
+
+这台 Mac 的 iOS 27.1 runtime 目前只能开机 **iPhone Duo**。iPhone 17 Pro Max 的模拟器机型与这个 runtime 不兼容，所以下面的命令用 iPhone Duo。Xcode 里如果以后有别的 iPhone 模拟器，选它 Run 即可。
+
+```bash
+cd ios/CpapMaskGuard
+xcodebuild -project CpapMaskGuard.xcodeproj -scheme CpapMaskGuard \
+  -destination 'platform=iOS Simulator,name=iPhone Duo,OS=27.1' \
+  -configuration Debug \
+  -derivedDataPath /tmp/CpapMaskGuardSim \
+  build
+
+APP=/tmp/CpapMaskGuardSim/Build/Products/Debug-iphonesimulator/CpapMaskGuard.app
+UDID=$(xcrun simctl list devices available | awk -F '[()]' '/iPhone Duo/ {print $2; exit}')
+xcrun simctl boot "$UDID" || true
+xcrun simctl bootstatus "$UDID" -b
+xcrun simctl install "$UDID" "$APP"
+xcrun simctl launch "$UDID" app.cpapmaskguard
+```
+
+产物：`/tmp/CpapMaskGuardSim/Build/Products/Debug-iphonesimulator/CpapMaskGuard.app`。
+
+打开后主屏是「还没开始」和「开始守护」。点「设置与本机」展开补光两档：前摄白屏（`UIScreen.brightness`）和后摄自备光（手电筒滑条调用 `setTorchModeOn(level:)`，默认关）。判定还没接。
+
+UI 检查（可选）：
+
+```bash
+xcodebuild -project CpapMaskGuard.xcodeproj -scheme CpapMaskGuard \
+  -destination 'platform=iOS Simulator,name=iPhone Duo,OS=27.1' \
+  -configuration Debug test
+```
+
+MiniMax key：把 `ios/CpapMaskGuard/Config/Secrets.xcconfig.example` 复制成同目录 `Secrets.xcconfig`（已 gitignore）。第 1 步不会调用接口。
+
+真机以后再装。Team 已是 `H45MTM24C4`。连上 iPhone 并在 Xcode 里选这台手机 Run 时，Xcode 会向该 Personal Team 自动注册 UDID 并生成描述文件。手机没连上之前没有真机 profile。
+
+English: scheme `CpapMaskGuard`, Automatic signing, team `H45MTM24C4`. Build and `simctl install` / `simctl launch` as above. This machine’s iOS 27.1 runtime only boots **iPhone Duo**. Home screen is one status line plus Start. Settings holds the two fill-light modes. Device install waits until a phone is plugged in.
+
 ---
 
 ## Privacy / 隐私
@@ -99,7 +146,7 @@ MIT — see [LICENSE](LICENSE).
 ## Roadmap / 路线图
 
 - Strengthen on-device EfficientNet-Lite0 mask on/off classifier  
-- iOS exploration (background camera limits apply)  
+- iOS step 1 foreground shell is in `ios/`. Next: on-device monitoring while the screen stays on. Background camera is not planned.
 - First-run UX polish  
 
-加强本机 EfficientNet-Lite0；探索 iOS（后台相机受限）；优化首次使用体验。
+加强本机 EfficientNet-Lite0；iOS 第 1 步亮屏壳已在 `ios/`，下一步才接前台监测（不做后台常开相机）；优化首次使用体验。

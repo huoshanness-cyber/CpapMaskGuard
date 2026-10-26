@@ -1,0 +1,8 @@
+// CpapMaskGuard iOS — Release.
+// Same signing and secret rules as Debug.
+
+CODE_SIGN_STYLE = Automatic
+DEVELOPMENT_TEAM = H45MTM24C4
+
+MINIMAX_API_KEY =
+#include? "Secrets.xcconfig"

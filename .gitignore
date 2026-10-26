@@ -13,3 +13,9 @@
 *.aab
 local.properties
 .kotlin/
+
+# iOS local secrets, signing leftovers, and Xcode user data
+**/Secrets.xcconfig
+**/xcuserdata/
+**/*.xcuserstate
+DerivedData/
