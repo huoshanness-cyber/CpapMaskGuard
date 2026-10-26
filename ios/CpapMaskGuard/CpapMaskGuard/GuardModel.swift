@@ -402,7 +402,7 @@ final class GuardModel: ObservableObject {
             var vote = "SAMPLE"
             var latency = 0
             var reason = l10n.sampleUnjudgedReason
-            let aimed = await aimIsValid(payload)
+            let aimed = (await aimScan(payload)).verdict.valid
             if !aimed {
                 result = l10n.aimSoftResult
                 vote = "AIM_MISS"
