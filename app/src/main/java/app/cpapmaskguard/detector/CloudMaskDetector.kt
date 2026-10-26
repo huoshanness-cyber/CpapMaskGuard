@@ -3,6 +3,7 @@ package app.cpapmaskguard.detector
 import android.util.Base64
 import android.util.Log
 import app.cpapmaskguard.LOG_TAG
+import app.cpapmaskguard.core.CloudUsage
 import app.cpapmaskguard.core.FrameVote
 import java.io.BufferedReader
 import java.io.InputStreamReader
@@ -25,6 +26,8 @@ interface CloudMaskDetector {
         val vote: FrameVote,
         val confidence: Float,
         val reason: String,
+        val promptTokens: Int = -1,
+        val completionTokens: Int = -1,
     )
 
     /** 是否已配置可用 Key，可发起请求。 */
@@ -161,7 +164,14 @@ class MiniMaxCloudMaskDetector(
         if (content.isEmpty()) {
             throw IllegalStateException("模型返回空 content")
         }
-        return parseLabel(content)
+        val usage = CloudUsage.parse(raw)
+        if (usage.known) {
+            Log.i(LOG_TAG, "MiniMax usage prompt=${usage.promptTokens} completion=${usage.completionTokens}")
+        }
+        return parseLabel(content).copy(
+            promptTokens = usage.promptTokens,
+            completionTokens = usage.completionTokens,
+        )
     }
 
     companion object {

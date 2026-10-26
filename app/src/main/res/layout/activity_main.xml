@@ -109,7 +109,28 @@
             android:layout_width="match_parent"
             android:layout_height="52dp"
             android:layout_marginTop="10dp"
-            android:text="@string/stop_alarm_short"
+            android:text="@string/stop_guard"
+            android:textColor="@color/text"
+            android:visibility="gone"
+            app:strokeColor="@color/line" />
+
+        <TextView
+            android:id="@+id/resumeQuotaLine"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="14dp"
+            android:gravity="center_horizontal"
+            android:textColor="@color/muted"
+            android:textSize="14sp"
+            android:visibility="gone" />
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/resumeUploadButton"
+            style="@style/Widget.Material3.Button.OutlinedButton"
+            android:layout_width="match_parent"
+            android:layout_height="52dp"
+            android:layout_marginTop="8dp"
+            android:text="@string/resume_upload"
             android:textColor="@color/text"
             android:visibility="gone"
             app:strokeColor="@color/line" />

@@ -6,10 +6,13 @@ import android.os.SystemClock
 import android.util.Log
 import app.cpapmaskguard.BuildConfig
 import app.cpapmaskguard.LOG_TAG
+import app.cpapmaskguard.core.AimGate
 import app.cpapmaskguard.core.BaselineComparator
+import app.cpapmaskguard.core.CloudCircuit
 import app.cpapmaskguard.core.Comparison
 import app.cpapmaskguard.core.DetectionConfig
 import app.cpapmaskguard.core.EmbeddingClusterClassifier
+import app.cpapmaskguard.core.EmbeddingMath
 import app.cpapmaskguard.core.FaceFeatures
 import app.cpapmaskguard.core.FrameVote
 import app.cpapmaskguard.twoDigits
@@ -33,7 +36,10 @@ class MaskDetector(
     private val cloud: CloudMaskDetector = run {
         val key = BuildConfig.MINIMAX_API_KEY.trim()
         if (key.isNotEmpty()) {
-            MiniMaxCloudMaskDetector(apiKey = key)
+            val endpoint = BuildConfig.MINIMAX_ENDPOINT.trim().ifEmpty {
+                MiniMaxCloudMaskDetector.DEFAULT_ENDPOINT
+            }
+            MiniMaxCloudMaskDetector(apiKey = key, endpoint = endpoint)
         } else {
             UnimplementedCloudMaskDetector()
         }
@@ -55,6 +61,18 @@ class MaskDetector(
         val usedFaceDetector: Boolean,
         val engine: String,
         val inferMs: Long,
+        /** 本机判定镜头没对准。没上云，也不算云端 MASK_OFF。 */
+        val aimInvalid: Boolean = false,
+        /** 上传已关，这一帧没有请求云端。 */
+        val cloudSkipped: Boolean = false,
+        /** 仅当这一帧真正拿到云端标签时非空。本机回退和暂停都不填。 */
+        val cloudVote: FrameVote? = null,
+        val promptTokens: Int = -1,
+        val completionTokens: Int = -1,
+        val circuit: CloudCircuit.State = CloudCircuit.State(),
+        val aimSignature: List<Float> = emptyList(),
+        /** 恢复次数用尽后走本机分类，不再只抱着上次云端脱落。 */
+        val localOnly: Boolean = false,
     )
 
     fun prepare(calibrationSkipped: Boolean): String {
@@ -139,12 +157,25 @@ class MaskDetector(
         file: File,
         debugCrop: File?,
         preferCloud: Boolean = true,
+        uploadAllowed: Boolean = true,
+        holdMaskOffAlarm: Boolean = false,
+        localFallback: Boolean = false,
+        circuit: CloudCircuit.State = CloudCircuit.State(),
     ): FrameDecision {
         val bitmap = BitmapDecode.decode(file, ImageLimits.DECODE_MAX_SIDE)
         return try {
             // 云端 classify 为 suspend；监测循环已在后台线程，此处 runBlocking 可接受
             runBlocking {
-                decideBitmap(bitmap, debugCrop, preferCloud, jpegFile = file)
+                decideBitmap(
+                    bitmap,
+                    debugCrop,
+                    preferCloud,
+                    jpegFile = file,
+                    uploadAllowed = uploadAllowed,
+                    holdMaskOffAlarm = holdMaskOffAlarm,
+                    localFallback = localFallback,
+                    circuit = circuit,
+                )
             }
         } finally {
             if (!bitmap.isRecycled) bitmap.recycle()
@@ -174,6 +205,10 @@ class MaskDetector(
         debugCrop: File?,
         preferCloud: Boolean,
         jpegFile: File?,
+        uploadAllowed: Boolean,
+        holdMaskOffAlarm: Boolean,
+        localFallback: Boolean,
+        circuit: CloudCircuit.State,
     ): FrameDecision {
         if (mode != Mode.READY) {
             val summary = if (mode == Mode.SKIPPED) {
@@ -198,28 +233,165 @@ class MaskDetector(
             }
         }
 
-        if (preferCloud && cloud.configured) {
+        if (preferCloud) {
             val started = SystemClock.elapsedRealtime()
-            try {
-                val jpegBytes = jpegForCloud(bitmap, jpegFile)
-                val cloudResult = cloud.classify(jpegBytes)
-                val inferMs = SystemClock.elapsedRealtime() - started
-                val comparison = Comparison(
-                    vote = cloudResult.vote,
-                    confidence = cloudResult.confidence,
-                    distanceToMaskOn = -1f,
-                    distanceToMaskOff = -1f,
-                    reason = cloudResult.reason,
+            val aim = assessAim(bitmap)
+            val aimMs = SystemClock.elapsedRealtime() - started
+            if (!aim.verdict.valid) {
+                Log.i(LOG_TAG, "对准失败 ${aim.verdict.reason}，跳过云端 ${aimMs}ms")
+                return FrameDecision(
+                    shouldAlarm = false,
+                    summary = AimGate.SOFT_HINT,
+                    confidence = 0f,
+                    streak = debouncer.maskOffStreak,
+                    vote = FrameVote.UNCERTAIN,
+                    usedFaceDetector = aim.verdict.reason == AimGate.Reason.FACE,
+                    engine = "aim-gate",
+                    inferMs = aimMs,
+                    aimInvalid = true,
+                    circuit = circuit,
+                    aimSignature = aim.signature,
                 )
-                return finish(comparison, inferMs, "minimax-m3")
-            } catch (error: Throwable) {
-                val inferMs = SystemClock.elapsedRealtime() - started
-                Log.w(LOG_TAG, "云端判定失败（${inferMs}ms），回退本机: ${error.message}")
-                // fall through to local
+            }
+            if (cloud.configured && !uploadAllowed && !localFallback) {
+                Log.i(LOG_TAG, "上传已关，跳过云端 holdAlarm=$holdMaskOffAlarm")
+                return FrameDecision(
+                    shouldAlarm = holdMaskOffAlarm,
+                    summary = if (holdMaskOffAlarm) {
+                        "已暂停上传，仍按上次脱落提醒"
+                    } else {
+                        "已暂停上传"
+                    },
+                    confidence = 0f,
+                    streak = debouncer.maskOffStreak,
+                    vote = if (holdMaskOffAlarm) FrameVote.CLOSER_TO_MASK_OFF else FrameVote.UNCERTAIN,
+                    usedFaceDetector = aim.verdict.reason == AimGate.Reason.FACE,
+                    engine = "cloud-paused",
+                    inferMs = aimMs,
+                    cloudSkipped = true,
+                    circuit = circuit,
+                    aimSignature = aim.signature,
+                )
+            }
+            if (cloud.configured && uploadAllowed) {
+                val now = System.currentTimeMillis()
+                val action = CloudCircuit.action(circuit, now)
+                if (action == CloudCircuit.Action.LOCAL) {
+                    Log.i(LOG_TAG, "云端熔断中，本机优先，跳过这一帧的云端等待")
+                    return decideLocal(bitmap, luma).copy(
+                        circuit = circuit,
+                        aimSignature = aim.signature,
+                    )
+                }
+                val attempted = if (action == CloudCircuit.Action.PROBE) {
+                    Log.i(LOG_TAG, "云端熔断中，低频探活")
+                    CloudCircuit.noteProbe(circuit, now)
+                } else {
+                    circuit
+                }
+                try {
+                    val jpegBytes = jpegForCloud(bitmap, jpegFile)
+                    val cloudResult = cloud.classify(jpegBytes)
+                    val inferMs = SystemClock.elapsedRealtime() - started
+                    val comparison = Comparison(
+                        vote = cloudResult.vote,
+                        confidence = cloudResult.confidence,
+                        distanceToMaskOn = -1f,
+                        distanceToMaskOff = -1f,
+                        reason = cloudResult.reason,
+                    )
+                    return finish(
+                        comparison,
+                        inferMs,
+                        "minimax-m3",
+                        cloudVote = cloudResult.vote,
+                        promptTokens = cloudResult.promptTokens,
+                        completionTokens = cloudResult.completionTokens,
+                        circuit = CloudCircuit.onSuccess(attempted),
+                        aimSignature = aim.signature,
+                    )
+                } catch (error: Throwable) {
+                    val inferMs = SystemClock.elapsedRealtime() - started
+                    val failed = CloudCircuit.onFailure(attempted, System.currentTimeMillis())
+                    Log.w(LOG_TAG, "云端判定失败（${inferMs}ms），回退本机: ${error.message}")
+                    return decideLocal(bitmap, luma).copy(
+                        circuit = failed,
+                        aimSignature = aim.signature,
+                    )
+                }
+            }
+            if (cloud.configured && localFallback) {
+                Log.i(LOG_TAG, "恢复次数已用尽，本机兜底，不再上传")
+                return decideLocal(bitmap, luma).copy(
+                    circuit = circuit,
+                    aimSignature = aim.signature,
+                    cloudSkipped = true,
+                    localOnly = true,
+                )
             }
         }
 
-        return decideLocal(bitmap, luma)
+        return decideLocal(bitmap, luma).copy(circuit = circuit)
+    }
+
+    private data class AimAssessment(
+        val verdict: AimGate.Verdict,
+        val signature: List<Float>,
+    )
+
+    /**
+     * 人脸不是必要条件。明确全黑/全白/严重模糊才拒绝；拿不准放行。
+     * 纹理先算。只有还没放行时才补脸和床头比对，避免每一帧都跑模型。
+     */
+    private fun assessAim(bitmap: Bitmap): AimAssessment {
+        val center = LocalAimProbe.center(bitmap)
+        var sample = AimGate.Sample(
+            centerMean = center.mean,
+            centerVariance = center.variance,
+            centerEdge = center.edge,
+        )
+        var verdict = AimGate.evaluate(sample)
+        if (verdict.valid && verdict.reason != AimGate.Reason.UNCERTAIN) {
+            return AimAssessment(verdict, center.signature)
+        }
+        val face = LocalAimProbe.faceWidthFraction(bitmap)
+        sample = sample.copy(faceWidthFraction = face)
+        verdict = AimGate.evaluate(sample)
+        if (verdict.valid && verdict.reason != AimGate.Reason.UNCERTAIN) {
+            return AimAssessment(verdict, center.signature)
+        }
+        if (sceneMatchesBedside(bitmap)) {
+            sample = sample.copy(sceneMatchesBedside = true)
+            verdict = AimGate.evaluate(sample)
+        }
+        Log.i(
+            LOG_TAG,
+            "对准 ${verdict.reason} face=${"%.2f".format(face)} mean=${"%.3f".format(center.mean)} " +
+                "var=${"%.4f".format(center.variance)} edge=${"%.3f".format(center.edge)}",
+        )
+        return AimAssessment(verdict, center.signature)
+    }
+
+    private fun sceneMatchesBedside(bitmap: Bitmap): Boolean {
+        val classifier = embeddingClassifier ?: return false
+        if (!usingTflite || !embedder.available) return false
+        return try {
+            val crop = FaceCropper.crop(bitmap)
+            try {
+                val embedding = embedder.embed(crop.lower)
+                val query = EmbeddingMath.l2Normalize(embedding)
+                val compared = classifier.compare(query, frameTooDark = false)
+                val distances = listOf(compared.distanceToMaskOn, compared.distanceToMaskOff).filter { it >= 0f }
+                val nearest = distances.minOrNull() ?: return false
+                nearest <= DetectionConfig.AIM_SCENE_MAX_DISTANCE
+            } finally {
+                if (!crop.full.isRecycled) crop.full.recycle()
+                if (!crop.lower.isRecycled) crop.lower.recycle()
+            }
+        } catch (error: Throwable) {
+            Log.w(LOG_TAG, "床头场景比对失败", error)
+            false
+        }
     }
 
     private fun decideLocal(bitmap: Bitmap, luma: LumaStats.Stats): FrameDecision {
@@ -320,6 +492,11 @@ class MaskDetector(
         comparison: Comparison,
         inferMs: Long,
         engine: String,
+        cloudVote: FrameVote? = null,
+        promptTokens: Int = -1,
+        completionTokens: Int = -1,
+        circuit: CloudCircuit.State = CloudCircuit.State(),
+        aimSignature: List<Float> = emptyList(),
     ): FrameDecision {
         val crossed = debouncer.onVote(comparison.vote)
         val shouldAlarm = crossed && comparison.vote == FrameVote.CLOSER_TO_MASK_OFF
@@ -355,6 +532,11 @@ class MaskDetector(
             usedFaceDetector = false,
             engine = engine,
             inferMs = inferMs,
+            cloudVote = cloudVote,
+            promptTokens = promptTokens,
+            completionTokens = completionTokens,
+            circuit = circuit,
+            aimSignature = aimSignature,
         )
     }
 

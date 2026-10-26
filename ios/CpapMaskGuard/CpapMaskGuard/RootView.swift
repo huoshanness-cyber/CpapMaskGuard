@@ -16,6 +16,7 @@ struct RootView: View {
                         captureCard
                         notices
                         heroButton
+                        resumeUploads
                         Text(model.l10n.foregroundLimit)
                             .font(.footnote)
                             .foregroundStyle(foregroundMuted)
@@ -53,8 +54,16 @@ struct RootView: View {
             }
         }
         .onChange(of: scenePhase) { _, phase in
-            guard phase == .background else { return }
-            Task { await model.leaveForeground() }
+            switch phase {
+            case .background:
+                Task { await model.leaveForeground() }
+            case .active:
+                model.resumeLoopIfStillGuarding()
+            case .inactive:
+                break
+            @unknown default:
+                break
+            }
         }
     }
 
@@ -131,7 +140,13 @@ struct RootView: View {
                         .font(.body)
                         .foregroundStyle(foregroundText)
                 }
-                if model.phase == .guarding {
+                    if model.phase == .guarding, model.judgmentAgeSeconds >= 0 {
+                        Text(model.l10n.lastJudgment(model.judgmentAgeSeconds))
+                            .font(.subheadline.monospacedDigit().weight(model.watchdogStale ? .bold : .regular))
+                            .foregroundStyle(model.watchdogStale ? Color.red : foregroundMuted)
+                            .accessibilityIdentifier("home.judgmentAge")
+                    }
+                    if model.phase == .guarding {
                     Text(model.snoreHint)
                         .font(.footnote)
                         .foregroundStyle(foregroundMuted)
@@ -232,6 +247,29 @@ struct RootView: View {
         .opacity(model.busy ? 0.55 : 1)
         .padding(.top, 8)
         .accessibilityHint(model.l10n.foregroundLimit)
+    }
+
+    @ViewBuilder
+    private var resumeUploads: some View {
+        if !model.uploadEnabled && AppSecrets.hasMinimaxKey {
+            VStack(alignment: .leading, spacing: 8) {
+                Text(model.resumeRemaining == 0 ? model.l10n.resumeExhausted : model.l10n.resumeRemaining(model.resumeRemaining))
+                    .font(.subheadline)
+                    .foregroundStyle(foregroundMuted)
+                    .fixedSize(horizontal: false, vertical: true)
+                Button {
+                    model.resumeUpload()
+                } label: {
+                    Text(model.l10n.resumeUpload)
+                        .font(.body.weight(.semibold))
+                        .frame(maxWidth: .infinity)
+                        .frame(minHeight: 48)
+                }
+                .buttonStyle(.bordered)
+                .disabled(model.resumeRemaining == 0 || model.busy)
+                .accessibilityIdentifier("home.resumeUpload")
+            }
+        }
     }
 }
 

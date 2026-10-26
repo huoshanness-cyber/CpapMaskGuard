@@ -35,7 +35,8 @@ struct L10n {
         alarming: Bool,
         failures: Int,
         vote: FrameVote?,
-        unjudged: Bool
+        unjudged: Bool,
+        aimMissed: Bool = false
     ) -> String {
         switch phase {
         case .idle:
@@ -50,6 +51,9 @@ struct L10n {
             }
             if failures >= 5 {
                 return language == .zh ? "请先摆好手机" : "Aim the phone at the pillow"
+            }
+            if aimMissed {
+                return language == .zh ? "正在确认面罩" : "Checking the mask"
             }
             if unjudged {
                 return language == .zh ? "正在确认面罩" : "Checking the mask"
@@ -168,8 +172,8 @@ struct L10n {
     func uploadNote(hasKey: Bool) -> String {
         if hasKey {
             return language == .zh
-                ? "有 Key 时，照片会发给 api.minimax.cn 的 MiniMax-M3（思考关闭，detail 为 low）。声音只在本机判断，不上传。"
-                : "With a key, stills go to MiniMax-M3 at api.minimax.cn (thinking off, detail low). Audio stays on the phone."
+                ? "全黑、全白或糊成一片才不上云。拿不准会照常问 MiniMax。连续 10 次脱落会停下上传。声音只在本机判断。"
+                : "Only a black, white, or badly blurred frame stays off the cloud. An uncertain frame is still sent. Ten mask-off results in a row stop uploads. Audio stays on the phone."
         }
         return language == .zh
             ? "还没有 MiniMax Key，照片不会上传，云端也无法判定。听鼾仍可在确认打呼后响铃。"
@@ -470,9 +474,72 @@ struct L10n {
             ? "还没有相机权限。请在系统设置里允许，再点开始守护。"
             : "Camera access is off. Allow it in Settings, then start."
     }
+    var aimSoftResult: String { language == .zh ? "镜头可能没对准" : "Aim looks off" }
+    var aimSoftHint: String {
+        language == .zh
+            ? "镜头可能没对准。这一张没有上传，守护还在。"
+            : "The camera may not be aimed. This photo was not uploaded. Guard is still on."
+    }
+    var pausedResult: String { language == .zh ? "已暂停上传" : "Uploads paused" }
+    var pausedReason: String {
+        language == .zh
+            ? "连续看到面罩脱落，已停止上传。守护还在，铃声仍按上次结果。戴好了就点「我戴好了」。"
+            : "Uploads stopped after repeated mask-off results. Guard and the alarm continue from the last result. Tap when the mask is back on."
+    }
+    var pausedAlarm: String {
+        language == .zh ? "已暂停上传，仍按上次脱落提醒" : "Uploads paused. Still using the last mask-off result."
+    }
+    var resumeUpload: String { language == .zh ? "我戴好了" : "Mask is on" }
+    func resumeRemaining(_ count: Int) -> String {
+        language == .zh ? "今晚还可恢复上传 \(count) 次（中午重置）" : "\(count) upload resumes left tonight (resets at noon)"
+    }
+    var resumeExhausted: String {
+        language == .zh
+            ? "今晚的恢复次数已用完。继续本机听鼾兜底，不再上传画面。"
+            : "No upload resumes left tonight. Snore detection continues on this phone, without sending photos."
+    }
+    func resumeAccepted(_ count: Int) -> String {
+        language == .zh ? "已恢复上传，今晚还可恢复 \(count) 次" : "Uploads resumed. \(count) resumes left tonight."
+    }
+    var localOnlyResult: String { language == .zh ? "本机兜底" : "On-device fallback" }
+    var guardInterrupted: String { language == .zh ? "守护已中断，点此恢复" : "Guard interrupted. Tap to resume." }
+    var guardFailedTitle: String { language == .zh ? "守护失效" : "Guard stalled" }
+    var guardStalled: String {
+        language == .zh ? "超过 3 个抓拍间隔没有新的判定" : "No new result for more than 3 capture intervals."
+    }
+    var logResumedAfterInactive: String {
+        language == .zh ? "回到前台，继续监测" : "Back in the foreground. Monitoring again."
+    }
+    var cloudProbe: String { language == .zh ? "云端熔断中，试探一次" : "Cloud circuit open. Probing once." }
+    var circuitLocal: String {
+        language == .zh ? "云端连续失败，这几分钟先不上传" : "Cloud failed twice. Skipping uploads for a few minutes."
+    }
+    func telemetry(prompt: Int, completion: Int) -> String {
+        "telemetry kind=round prompt=\(prompt) completion=\(completion)"
+    }
+    var donationPending: String {
+        language == .zh
+            ? "图片捐赠已打开，但还没有上传地址，这一帧只记了指标"
+            : "Image donation is on, but there is no upload URL. This frame logged metrics only."
+    }
+    func autoResumed(_ count: Int) -> String {
+        language == .zh ? "画面变化已确认，自动恢复上传一次。今晚还可恢复 \(count) 次" : "The scene changed, so uploads resumed once. \(count) resumes left tonight."
+    }
+    func lastJudgment(_ seconds: Int) -> String {
+        language == .zh ? "上次判定 \(seconds) 秒前" : "Last result \(seconds)s ago"
+    }
+    var resumeAlready: String {
+        language == .zh ? "上传本来就是开着的" : "Uploads are already on"
+    }
+    func uploadStopped(_ streak: Int, _ remaining: Int) -> String {
+        language == .zh
+            ? "连续 \(streak) 次看到面罩脱落，已停止上传。铃声继续。今晚还可恢复上传 \(remaining) 次"
+            : "\(streak) mask-off results in a row. Uploads stopped. The alarm continues. \(remaining) resumes left tonight."
+    }
+
     var versionFooter: String {
         language == .zh
-            ? "iOS 0.3.9 · 亮屏前台监测 · MIT"
-            : "iOS 0.3.9 · foreground monitor · MIT"
+            ? "iOS 0.4.1 · 亮屏前台监测 · MIT"
+            : "iOS 0.4.1 · foreground monitor · MIT"
     }
 }

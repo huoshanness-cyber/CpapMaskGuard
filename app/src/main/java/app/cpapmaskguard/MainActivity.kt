@@ -39,6 +39,8 @@ import app.cpapmaskguard.runtime.RunStatus
 import app.cpapmaskguard.service.BurnInService
 import app.cpapmaskguard.service.MonitorService
 import app.cpapmaskguard.settings.FillLightMode
+import app.cpapmaskguard.core.CloudUploadPolicy
+import app.cpapmaskguard.settings.CloudUploadStore
 import app.cpapmaskguard.settings.SettingsStore
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import java.io.File
@@ -54,6 +56,7 @@ import kotlinx.coroutines.withContext
 class MainActivity : AppCompatActivity() {
     private lateinit var binding: ActivityMainBinding
     private lateinit var settings: SettingsStore
+    private lateinit var cloudUpload: CloudUploadStore
     private lateinit var baselines: BaselineStore
     private var torchNoDimToasted = false
     private var rendering = false
@@ -112,12 +115,14 @@ class MainActivity : AppCompatActivity() {
         binding = ActivityMainBinding.inflate(layoutInflater)
         setContentView(binding.root)
         settings = SettingsStore(this)
+        cloudUpload = CloudUploadStore(this)
         baselines = BaselineStore(this)
         baselines.migrateLegacyIfNeeded()
         binding.primaryButton.setOnClickListener { onPrimary() }
         binding.secondaryButton.setOnClickListener {
             MonitorService.send(this, MonitorService.ACTION_STOP)
         }
+        binding.resumeUploadButton.setOnClickListener { onResumeUpload() }
         binding.calibrateButton.setOnClickListener { openCalibration() }
         binding.clearBaselineButton.setOnClickListener { confirmClearBaselines() }
         binding.healthReportButton.setOnClickListener { sendHealthReportEmail() }
@@ -240,7 +245,6 @@ class MainActivity : AppCompatActivity() {
                 KeepAliveGuide.openBatteryOptimization(this)
                 toast("当前不是小米或打不开小米省电页，已打开通用电池设置。")
             }
-        }
         }
         binding.fullScreenButton.setOnClickListener {
             if (!KeepAliveGuide.openFullScreenSettings(this)) {
@@ -370,6 +374,8 @@ class MainActivity : AppCompatActivity() {
             RunStatus.STOPPED -> false
         }
         binding.secondaryButton.visibility = if (alarming) View.VISIBLE else View.GONE
+        binding.secondaryButton.text = getString(R.string.stop_guard)
+        renderCloudQuota()
         binding.primaryButton.text = when {
             alarming -> getString(R.string.stop_alarm_short)
             running -> getString(R.string.stop_guard)
@@ -747,6 +753,34 @@ class MainActivity : AppCompatActivity() {
         val first = if (start > 0L) Instant.ofEpochMilli(start).atZone(zone).format(formatter) else "?"
         val second = if (end > 0L) Instant.ofEpochMilli(end).atZone(zone).format(formatter) else "?"
         return "（$first / $second）"
+    }
+
+    private fun renderCloudQuota() {
+        val state = cloudUpload.state()
+        val showButton = !state.uploadEnabled
+        val showCount = showButton || state.resumesUsed > 0
+        binding.resumeQuotaLine.visibility = if (showCount) View.VISIBLE else View.GONE
+        binding.resumeUploadButton.visibility = if (showButton) View.VISIBLE else View.GONE
+        if (!showCount && !showButton) return
+        val remaining = state.remaining()
+        binding.resumeQuotaLine.text = if (showButton && remaining == 0) {
+            getString(R.string.resume_exhausted)
+        } else {
+            getString(R.string.resume_remaining, remaining)
+        }
+        binding.resumeUploadButton.isEnabled = remaining > 0
+    }
+
+    private fun onResumeUpload() {
+        when (val outcome = cloudUpload.resume()) {
+            is CloudUploadPolicy.Resume.Accepted ->
+                toast(getString(R.string.resume_accepted, outcome.state.remaining()))
+            is CloudUploadPolicy.Resume.Denied ->
+                toast(getString(R.string.resume_exhausted))
+            is CloudUploadPolicy.Resume.AlreadyOn ->
+                toast(getString(R.string.resume_already))
+        }
+        render(MonitorRuntime.snapshot.value)
     }
 
     private fun onPrimary() {
@@ -1175,15 +1209,31 @@ class MainActivity : AppCompatActivity() {
                     getString(R.string.status_checking) to "正在再确认一次，请保持姿势。"
                 label.contains("未检测") ->
                     getString(R.string.status_place_phone) to "镜头里好像没看到人，请把手机对准枕头。"
+                label.contains("对准") ->
+                    getString(R.string.status_checking) to getString(R.string.aim_soft_hint)
+                label.contains("暂停") ->
+                    getString(R.string.status_checking) to getString(R.string.upload_paused_detail)
+                label.contains("本机") ->
+                    getString(R.string.status_checking) to getString(R.string.resume_exhausted)
                 else ->
                     getString(R.string.status_checking) to "正在看面罩还在不在。"
             }
-            RunStatus.ALARMING ->
-                getString(R.string.status_off_alert) to "请先戴回面罩，再点停止提醒。守护会继续。"
-            RunStatus.ERROR ->
-                getString(R.string.status_place_phone) to detailFallback.ifBlank {
-                    "相机不太稳定，请检查摆放与权限。"
+            RunStatus.ALARMING -> {
+                val body = if (snapshot.lastScoreHint?.contains("镜头可能没对准") == true) {
+                    R.string.alarm_detail_aim
+                } else {
+                    R.string.alarm_detail
                 }
+                getString(R.string.status_off_alert) to getString(body)
+            }
+            RunStatus.ERROR -> {
+                val head = when {
+                    detailFallback.contains("守护已中断") -> "守护已中断，点此恢复"
+                    detailFallback.contains("连续判定失败") || detailFallback.contains("没有新的判定") -> "守护失效"
+                    else -> getString(R.string.status_place_phone)
+                }
+                head to detailFallback.ifBlank { "相机不太稳定，请检查摆放与权限。" }
+            }
         }
     }
 

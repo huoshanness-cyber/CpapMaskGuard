@@ -221,6 +221,12 @@ class SettingsStore(context: Context) {
         prefs.edit().putString(KEY_REPORT_EMAILS, value).apply()
     }
 
+    /** 图片捐赠。默认关。没有上传地址时即使打开也只留在本机，不会发出去。 */
+    fun imageDonationEnabled(): Boolean = prefs.getBoolean(KEY_IMAGE_DONATION, false)
+
+    fun setImageDonationEnabled(enabled: Boolean) {
+        prefs.edit().putBoolean(KEY_IMAGE_DONATION, enabled).apply()
+    }
 
     private companion object {
         const val PREFS = "cpap_mask_guard"
@@ -242,6 +248,7 @@ class SettingsStore(context: Context) {
         const val KEY_REPORT_EMAILS = "report_emails"
         const val KEY_SHOW_PREVIEW = "show_monitor_preview"
         const val KEY_PREVIEW_UNTIL = "preview_until_epoch_ms"
+        const val KEY_IMAGE_DONATION = "image_donation_enabled"
         const val PREVIEW_DURATION_MS = 5L * 60L * 1000L
         const val DEFAULT_SCREEN_BRIGHTNESS = 0.85f
 

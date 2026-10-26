@@ -9,7 +9,7 @@
 
 **CpapMaskGuard** is an Android app for **CPAP / sleep-apnea users** (especially moderate+ severity) who wear a mask at night. It uses the phone **rear camera + torch** to watch whether the mask is on or off. If the mask detaches, it alarms in about **9 seconds** so you can put it back on.
 
-**Detection:** online primary path is cloud vision (**MiniMax-M3**); offline fallback is an on-device **EfficientNet-Lite0** binary classifier (mask on / off).
+**Detection:** the phone skips the cloud only for a clearly black, white, or badly blurred frame. A face is not required (a full-face mask often has no detectable eyes). Uncertain frames are sent. Ten cloud “mask off” answers in a row stop further uploads until you tap “mask is on”, or until the scene clearly changes for three frames (10 resumes per Shanghai **sleep day**, which rolls at noon, not midnight). After the resume quota is used up, Android keeps classifying on device and listening for snore. If there is no key or the cloud request fails, the offline fallback is still the on-device classifier (mask on / off). Two cloud failures in a row prefer that local path for five minutes.
 
 **Open-source and free** for global users. **Android monitors in the background.** **iOS 0.3.9 monitors only in the foreground**: the screen stays on, a still is taken every 5–10 seconds, MiniMax-M3 classifies it, and a siren plays if the mask looks off. Locking the phone or leaving the app stops the camera. iOS cannot keep the camera running in the true background.
 
@@ -33,7 +33,7 @@
 
 **面罩守护（CpapMaskGuard）**面向夜间佩戴呼吸机面罩的 **CPAP / 睡眠呼吸暂停用户**（尤其中度及以上）。用手机**后置摄像头 + 手电筒**监测面罩是否还在脸上；一旦脱落，约 **9 秒内**大声提醒，方便重新戴上。
 
-**判定：**联网时主用云端看图（**MiniMax-M3**）；断网时用本机 **EfficientNet-Lite0** 二分类（戴着 / 脱落）兜底。
+**判定：**明确的全黑、全白或严重模糊才不上云；没检出人脸也会上云（全脸面罩经常检不出眼睛），拿不准同样上云（**MiniMax-M3**）。云端连续 10 次判脱落就停止上传。恢复以点「我戴好了」为主；画面明显变化并连续确认后也会自动恢复一次。每个上海睡眠日（中午 12:00 换日，不是午夜）最多 10 次。次数用尽后安卓继续本机判断并听鼾。断网或没有 Key 时用本机分类兜底。云端连续失败 2 次后，5 分钟内优先本机，大约每分钟才探一次。
 
 **开源、全球免费**。**安卓版可以在后台监测。** **iOS 0.3.9 只在前台监测**：屏幕保持亮着，大约每 5–10 秒拍一张，交给 MiniMax-M3 看面罩，脱落就响铃。锁屏或离开 App，相机会停。iOS 做不到真正的后台常开相机。
 
@@ -149,11 +149,13 @@ English: scheme `CpapMaskGuard`, Automatic signing, team `H45MTM24C4`. Build and
 ## Privacy / 隐私
 
 - Frames are used for mask detection.
-- With cloud mode + key: frames go to the configured vision API.
-- Offline / no key: inference stays on device.
+- With cloud mode + key: a frame goes to the configured vision API only after the on-device aim check passes, and only while cloud upload is still enabled.
+- Ten cloud mask-off results in a row turn uploads off. The alarm keeps using the last mask-off result while resumes remain. Resume is limited to 10 times per Asia/Shanghai sleep day (noon). After that, the phone stays on the local classifier and snore detector.
+- Offline / no key, or a failed cloud call: inference stays on device when a local baseline exists.
+- After uploads stop, capture and the aim check continue, and the siren follows the last cloud mask-off result.
 - No account system in the app today.
 
-有云端 Key 时画面会发到配置的视觉 API；无 Key 或断网则本机推理；当前无账号体系。
+有云端 Key 时，只有明确全黑、全白或严重模糊的画面不会上传；拿不准会上传。连续 10 次云端脱落会停止上传。恢复主要靠「我戴好了」，画面连续明显变化也可以自动恢复一次。上海时间以中午 12:00 划分睡眠日，每晚最多 10 次。次数用尽后继续本机兜底和听鼾。无 Key 或云端请求失败时，有本机基准就在本机判断。当前无账号体系。图片默认不捐赠。
 
 ---
 

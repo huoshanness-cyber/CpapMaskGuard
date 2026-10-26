@@ -6,6 +6,12 @@ import android.app.NotificationManager
 import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
+import android.media.AudioAttributes
+import android.media.RingtoneManager
+import android.os.Build
+import android.os.VibrationEffect
+import android.os.Vibrator
+import android.os.VibratorManager
 import androidx.core.app.NotificationCompat
 import app.cpapmaskguard.AlarmActivity
 import app.cpapmaskguard.FillLightActivity
@@ -20,8 +26,10 @@ object Notifications {
     const val ID_MONITOR = 1001
     const val ID_ALARM = 1002
     const val ID_BURN_IN = 1003
+    const val ID_GUARD = 1004
     private const val CHANNEL_MONITOR = "monitor"
     private const val CHANNEL_ALARM = "alarm"
+    private const val CHANNEL_GUARD = "guard_failure"
 
     fun createChannels(context: Context) {
         val manager = context.getSystemService(NotificationManager::class.java)
@@ -45,8 +53,26 @@ object Notifications {
             enableVibration(false)
             lockscreenVisibility = Notification.VISIBILITY_PUBLIC
         }
+        val guardSound = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_NOTIFICATION)
+        val guard = NotificationChannel(
+            CHANNEL_GUARD,
+            "守护失效",
+            NotificationManager.IMPORTANCE_HIGH,
+        ).apply {
+            description = "监测中断、连续判定失败或长时间没有新结果。提示音和脱落铃声不是同一个。"
+            setSound(
+                guardSound,
+                AudioAttributes.Builder()
+                    .setUsage(AudioAttributes.USAGE_NOTIFICATION)
+                    .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
+                    .build(),
+            )
+            enableVibration(true)
+            lockscreenVisibility = Notification.VISIBILITY_PUBLIC
+        }
         manager.createNotificationChannel(monitor)
         manager.createNotificationChannel(alarm)
+        manager.createNotificationChannel(guard)
     }
 
     fun monitoring(context: Context, text: String): Notification {
@@ -104,6 +130,53 @@ object Notifications {
             .setContentIntent(activityIntent(context, MainActivity::class.java, 11))
             .addAction(0, "取消烤机", burnInServiceIntent(context, BurnInService.ACTION_CANCEL, 12))
             .build()
+    }
+
+    /**
+     * 守护失效。用通知音，不用脱落那条循环闹钟。
+     * 相机绑定失败时标题固定为「守护已中断，点此恢复」，并尽量全屏拉回主界面。
+     */
+    fun guardFailure(context: Context, title: String, body: String, fullScreen: Boolean): Notification {
+        val open = activityIntent(context, MainActivity::class.java, 21)
+        val builder = NotificationCompat.Builder(context, CHANNEL_GUARD)
+            .setSmallIcon(R.drawable.ic_stat_alarm)
+            .setContentTitle(title)
+            .setContentText(body)
+            .setStyle(NotificationCompat.BigTextStyle().bigText(body))
+            .setPriority(NotificationCompat.PRIORITY_MAX)
+            .setCategory(NotificationCompat.CATEGORY_ERROR)
+            .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
+            .setAutoCancel(true)
+            .setContentIntent(open)
+        if (fullScreen) {
+            builder.setFullScreenIntent(open, true)
+        }
+        return builder.build()
+    }
+
+    fun notifyGuardFailure(context: Context, title: String, body: String, fullScreen: Boolean) {
+        val manager = context.getSystemService(NotificationManager::class.java)
+        manager.notify(ID_GUARD, guardFailure(context, title, body, fullScreen))
+        chirp(context)
+    }
+
+    /** 通知渠道在前台时可能不出声，再补一声短提示，仍然不是脱落铃声。 */
+    fun chirp(context: Context) {
+        try {
+            val uri = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_NOTIFICATION)
+            RingtoneManager.getRingtone(context, uri)?.play()
+        } catch (_: Exception) {
+        }
+        try {
+            val vibrator = if (Build.VERSION.SDK_INT >= 31) {
+                context.getSystemService(VibratorManager::class.java)?.defaultVibrator
+            } else {
+                @Suppress("DEPRECATION")
+                context.getSystemService(Vibrator::class.java)
+            }
+            vibrator?.vibrate(VibrationEffect.createOneShot(280, VibrationEffect.DEFAULT_AMPLITUDE))
+        } catch (_: Exception) {
+        }
     }
 
     fun cancelAlarm(context: Context) {
