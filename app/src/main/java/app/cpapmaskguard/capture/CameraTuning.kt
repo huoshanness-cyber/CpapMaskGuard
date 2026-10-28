@@ -34,5 +34,7 @@ object CameraTuning {
      * 默认手电筒强度（0..1）。预设微弱，尽量不影响睡眠。
      * API 33+ 且机型支持 strength 时生效；否则只能全开/关。
      */
-    const val DEFAULT_TORCH_LEVEL = 0.15f
+    /** 过夜建议 2%。滑条仍可降到约 1%。只能开关的机器不会被这个值关掉。 */
+    const val DEFAULT_TORCH_LEVEL = 0.02f
+    const val MIN_TORCH_LEVEL = 0.01f
 }

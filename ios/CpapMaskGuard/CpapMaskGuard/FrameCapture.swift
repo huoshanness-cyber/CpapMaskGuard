@@ -33,6 +33,9 @@ final class FrameCapture: NSObject, @unchecked Sendable {
     /// Let auto-exposure move before the first JPEG after the sensor starts.
     private let warmUp: TimeInterval = 0.25
 
+    /// Live finder for aiming at the pillow. Same session as the stills.
+    let previewLayer = AVCaptureVideoPreviewLayer()
+
     private var device: AVCaptureDevice?
     private var position: AVCaptureDevice.Position?
     private var wantTorch = false
@@ -47,6 +50,8 @@ final class FrameCapture: NSObject, @unchecked Sendable {
 
     override init() {
         super.init()
+        previewLayer.videoGravity = .resizeAspectFill
+        previewLayer.session = session
         sink.owner = self
     }
 
@@ -207,6 +212,7 @@ final class FrameCapture: NSObject, @unchecked Sendable {
             self.acceptingFrames = true
             self.acceptAfter = Date().addingTimeInterval(self.warmUp)
         }
+        orientPreviewOnQueue(position: position)
         return setTorchOnQueue(enabled: torchEnabled && position == .back, level: level)
     }
 
@@ -283,9 +289,21 @@ final class FrameCapture: NSObject, @unchecked Sendable {
         }
     }
 
+    private func orientPreviewOnQueue(position: AVCaptureDevice.Position) {
+        guard let connection = previewLayer.connection else { return }
+        let angle: CGFloat = 90
+        if connection.isVideoRotationAngleSupported(angle) {
+            connection.videoRotationAngle = angle
+        }
+        if position == .front, connection.isVideoMirroringSupported {
+            connection.automaticallyAdjustsVideoMirroring = false
+            connection.isVideoMirrored = false
+        }
+    }
+
     private func setTorchOnQueue(enabled: Bool, level: Float) -> TorchReport {
         wantTorch = enabled
-        torchLevel = min(max(level, 0.05), 1)
+        torchLevel = TorchLevel.clamp(level)
         guard let device else {
             return TorchReport(isOn: false, level: torchLevel, supportsLevel: false, status: "手电筒不可用", error: "相机还没打开")
         }
@@ -334,8 +352,8 @@ final class FrameCapture: NSObject, @unchecked Sendable {
                     isOn: true,
                     level: 1,
                     supportsLevel: false,
-                    status: "手电筒只支持开/关",
-                    error: "setTorchModeOn 失败，已退回全开：\(error.localizedDescription)"
+                    status: "这台手机只能开关，已开灯",
+                    error: nil
                 )
             }
         } catch {

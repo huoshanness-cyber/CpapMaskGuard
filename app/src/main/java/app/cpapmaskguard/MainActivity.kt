@@ -21,7 +21,10 @@ import androidx.core.content.ContextCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
+import app.cpapmaskguard.capture.AimPreview
+import app.cpapmaskguard.capture.AimPreviewTarget
 import app.cpapmaskguard.capture.CameraTuning
+import app.cpapmaskguard.core.SettleGate
 import app.cpapmaskguard.core.BatteryEstimate
 import app.cpapmaskguard.core.DetectionConfig
 import app.cpapmaskguard.core.MonitorPolicy
@@ -58,8 +61,10 @@ class MainActivity : AppCompatActivity() {
     private lateinit var settings: SettingsStore
     private lateinit var cloudUpload: CloudUploadStore
     private lateinit var baselines: BaselineStore
-    private var torchNoDimToasted = false
     private var rendering = false
+    private var aimPreview: AimPreview? = null
+    private var aimSignature: String? = null
+    private var settleTickerJob: Job? = null
     private var suppressKilledBannerUntil = 0L
     private var previewExpireJob: Job? = null
     private var previewUiJob: Job? = null
@@ -114,6 +119,8 @@ class MainActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         binding = ActivityMainBinding.inflate(layoutInflater)
         setContentView(binding.root)
+        AimPreviewTarget.view = binding.aimPreview
+        aimPreview = AimPreview(this, this)
         settings = SettingsStore(this)
         cloudUpload = CloudUploadStore(this)
         baselines = BaselineStore(this)
@@ -174,15 +181,14 @@ class MainActivity : AppCompatActivity() {
         binding.torchSwitch.setOnCheckedChangeListener { _, checked ->
             if (rendering) return@setOnCheckedChangeListener
             settings.setTorchEnabled(checked)
+            refreshAimPreview()
         }
         binding.torchSlider.addOnChangeListener { _, value, fromUser ->
             if (!fromUser || rendering) return@addOnChangeListener
-            settings.setTorchLevel(value)
-            binding.torchLevelLabel.text = getString(R.string.torch_level, (value * 100).toInt())
-            if (!torchNoDimToasted) {
-                torchNoDimToasted = true
-                toast(getString(R.string.torch_no_dim_toast))
-            }
+            val level = (value / 100f).coerceIn(CameraTuning.MIN_TORCH_LEVEL, 0.6f)
+            settings.setTorchLevel(level)
+            binding.torchLevelLabel.text = getString(R.string.torch_level, value.toInt())
+            refreshAimPreview()
         }
         binding.previewSwitch.setOnCheckedChangeListener { _, checked ->
             if (rendering) return@setOnCheckedChangeListener
@@ -281,6 +287,7 @@ class MainActivity : AppCompatActivity() {
         render(MonitorRuntime.snapshot.value)
         startHealthTicker()
         refreshHealthScore()
+        refreshAimPreview()
     }
 
     override fun onDestroy() {
@@ -288,6 +295,8 @@ class MainActivity : AppCompatActivity() {
         previewUiJob?.cancel()
         previewDecodeJob?.cancel()
         healthTickerJob?.cancel()
+        settleTickerJob?.cancel()
+        if (!MonitorService.alive.get()) aimPreview?.stop()
         clearKeepScreenOn()
         super.onDestroy()
     }
@@ -310,8 +319,8 @@ class MainActivity : AppCompatActivity() {
         binding.screenBrightnessLabel.text =
             getString(R.string.screen_brightness_level, (current.screenBrightness * 100).toInt())
         binding.torchSwitch.isChecked = current.torchEnabled
-        binding.torchSlider.value = current.torchLevel.coerceIn(0.05f, 0.6f)
-        binding.torchLevelLabel.text = getString(R.string.torch_level, (current.torchLevel * 100).toInt())
+        binding.torchSlider.value = (current.torchLevel * 100f).coerceIn(1f, 60f)
+        binding.torchLevelLabel.text = getString(R.string.torch_level, (current.torchLevel * 100).toInt().coerceIn(1, 60))
         configureSlider(current.intervalSec, current.lowEndMode)
         if (settings.isMonitorPreviewActive()) {
             schedulePreviewAutoOff()
@@ -343,6 +352,14 @@ class MainActivity : AppCompatActivity() {
             binding.intervalLabel.text = getString(R.string.interval_value, value.toInt())
         }
         binding.intervalLabel.text = getString(R.string.interval_value, target)
+    }
+
+    private fun settleRemaining(snapshot: MonitorSnapshot): Int {
+        val until = snapshot.settleUntilElapsed
+        if (until <= 0L) return 0
+        val leftMs = until - SystemClock.elapsedRealtime()
+        if (leftMs <= 0L) return 0
+        return ((leftMs + 999L) / 1000L).toInt()
     }
 
     private fun render(snapshot: MonitorSnapshot) {
@@ -392,7 +409,55 @@ class MainActivity : AppCompatActivity() {
         binding.skipBanner.visibility = if (current.calibrationSkipped) View.VISIBLE else View.GONE
         refreshKilledBanner(snapshot)
         updatePreviewUi(snapshot, running)
+        updateAimWindow(snapshot, running)
         if (!running) refreshBaseline()
+    }
+
+    private fun updateAimWindow(snapshot: MonitorSnapshot, running: Boolean) {
+        val settling = settleRemaining(snapshot) > 0
+        val show = !running || settling
+        binding.aimPreviewCard.visibility = if (show) View.VISIBLE else View.GONE
+        if (settling) startSettleTicker()
+        if (!running && !settling) refreshAimPreview()
+    }
+
+    private fun startSettleTicker() {
+        if (settleTickerJob?.isActive == true) return
+        settleTickerJob = lifecycleScope.launch {
+            delay(1_000)
+            while (true) {
+                val snap = MonitorRuntime.snapshot.value
+                if (settleRemaining(snap) <= 0 && snap.settleUntilElapsed == 0L) break
+                render(snap)
+                delay(1_000)
+            }
+        }
+    }
+
+    private fun refreshAimPreview() {
+        if (!::binding.isInitialized) return
+        if (MonitorService.alive.get()) {
+            aimSignature = null
+            return
+        }
+        val granted = ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA) ==
+            PackageManager.PERMISSION_GRANTED
+        if (!granted) {
+            binding.aimPreviewCaption.setText(R.string.aim_preview_need_camera)
+            aimSignature = null
+            return
+        }
+        binding.aimPreviewCaption.setText(R.string.aim_preview_caption)
+        val current = settings.settings()
+        val front = current.fillLightMode == FillLightMode.FRONT_SCREEN
+        val torch = !front && current.torchEnabled
+        val signature = "$front|$torch|${current.torchLevel}"
+        if (signature == aimSignature) return
+        aimSignature = signature
+        lifecycleScope.launch {
+            if (MonitorService.alive.get()) return@launch
+            aimPreview?.start(binding.aimPreview, front, torch, current.torchLevel)
+        }
     }
 
     private fun updatePreviewUi(snapshot: MonitorSnapshot, running: Boolean) {
@@ -856,23 +921,34 @@ class MainActivity : AppCompatActivity() {
     private fun startNow() {
         suppressKilledBannerUntil = SystemClock.elapsedRealtime() + 8_000
         binding.killedBanner.visibility = View.GONE
+        val until = SystemClock.elapsedRealtime() + SettleGate.WINDOW_MS
+        MonitorRuntime.update {
+            it.copy(
+                status = RunStatus.STARTING,
+                headline = getString(R.string.settle_headline, 60),
+                detail = getString(R.string.settle_detail),
+                settleUntilElapsed = until,
+            )
+        }
+        binding.aimPreviewCard.visibility = View.VISIBLE
+        aimSignature = null
+        aimPreview?.stop()
         settings.setMonitoringRequested(true)
         val mode = settings.settings().fillLightMode
-        val cam = when (mode) {
-            FillLightMode.FRONT_SCREEN -> "前置（屏幕补光）"
-            FillLightMode.REAR_AMBIENT -> "后置（自备光源）"
-        }
-        MonitorRuntime.update {
-            it.copy(status = RunStatus.STARTING, headline = getString(R.string.status_checking), detail = "正在打开${cam}摄像头，请保持对准枕头。")
-        }
-        try {
-            MonitorService.send(this, MonitorService.ACTION_START)
-        } catch (error: Exception) {
-            settings.setMonitoringRequested(false)
-            MonitorRuntime.update {
-                it.copy(status = RunStatus.ERROR, headline = getString(R.string.status_place_phone), detail = error.message ?: "系统拒绝了前台服务")
+        binding.aimPreview.post {
+            try {
+                MonitorService.send(this, MonitorService.ACTION_START)
+            } catch (error: Exception) {
+                settings.setMonitoringRequested(false)
+                MonitorRuntime.update {
+                    it.copy(
+                        status = RunStatus.ERROR,
+                        headline = getString(R.string.status_place_phone),
+                        detail = error.message ?: "系统拒绝了前台服务",
+                        settleUntilElapsed = 0L,
+                    )
+                }
             }
-            return
         }
         if (mode == FillLightMode.FRONT_SCREEN) {
             FillLightActivity.launchIfNeeded(this)
@@ -1190,6 +1266,10 @@ class MainActivity : AppCompatActivity() {
 
     /** 主屏只显示生活化状态；引擎名/ms/分辨率等留在 techLine。 */
     private fun lifestyleStatus(snapshot: MonitorSnapshot): Pair<String, String> {
+        val left = settleRemaining(snapshot)
+        if (left > 0 && snapshot.status != RunStatus.STOPPED && snapshot.status != RunStatus.ALARMING) {
+            return getString(R.string.settle_headline, left) to getString(R.string.settle_detail)
+        }
         val label = snapshot.previewResultLabel.orEmpty()
         val detailFallback = snapshot.detail
         return when (snapshot.status) {

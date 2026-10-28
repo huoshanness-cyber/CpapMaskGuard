@@ -40,6 +40,12 @@ class SnoreListener(private val context: Context) {
 
     fun confirmedForMs(): Long = tracker.confirmedSinceElapsedMs
 
+    /** 躺好缓冲结束时清掉坐床边积下来的打呼确认。 */
+    fun clearConfirmation() {
+        tracker.reset()
+        if (running.get()) lastHint = "听声中"
+    }
+
     fun start(): Boolean {
         if (!hasPermission()) {
             lastHint = "无麦克风权限"

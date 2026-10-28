@@ -1,4 +1,6 @@
+import AVFoundation
 import SwiftUI
+import UIKit
 
 struct RootView: View {
     @StateObject private var model = GuardModel()
@@ -13,6 +15,7 @@ struct RootView: View {
                     VStack(alignment: .leading, spacing: 18) {
                         header
                         statusBlock
+                        aimWindow
                         captureCard
                         notices
                         heroButton
@@ -53,12 +56,19 @@ struct RootView: View {
                 alarmBar
             }
         }
+        .task(id: model.phase) {
+            guard model.phase != .guarding else { return }
+            await model.openAimPreviewIfAllowed()
+        }
         .onChange(of: scenePhase) { _, phase in
             switch phase {
             case .background:
                 Task { await model.leaveForeground() }
             case .active:
                 model.resumeLoopIfStillGuarding()
+                if model.phase != .guarding {
+                    Task { await model.openAimPreviewIfAllowed() }
+                }
             case .inactive:
                 break
             @unknown default:
@@ -94,6 +104,40 @@ struct RootView: View {
                 .fixedSize(horizontal: false, vertical: true)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    @ViewBuilder
+    private var aimWindow: some View {
+        if model.showsAimPreview {
+            ZStack(alignment: .bottomLeading) {
+                AimCameraPreview(previewLayer: model.previewLayer)
+                    .frame(maxWidth: .infinity)
+                    .frame(height: 220)
+                    .background(Color.black)
+                    .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+                Text(model.l10n.aimAtPillow)
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 6)
+                    .background(Color.black.opacity(0.45))
+                    .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                    .padding(10)
+            }
+            .accessibilityIdentifier("home.aimPreview")
+        } else if model.phase != .guarding {
+            Button {
+                Task { await model.openAimPreview() }
+            } label: {
+                Text(model.l10n.aimPreviewButton)
+                    .font(.body.weight(.semibold))
+                    .frame(maxWidth: .infinity)
+                    .frame(minHeight: 72)
+            }
+            .buttonStyle(.bordered)
+            .tint(model.whiteScreenActive ? GuardTheme.ink : GuardTheme.accent)
+            .accessibilityIdentifier("home.aimPreview")
+        }
     }
 
     private var statusBlock: some View {
@@ -150,7 +194,7 @@ struct RootView: View {
                     Text(model.snoreHint)
                         .font(.footnote)
                         .foregroundStyle(foregroundMuted)
-                    Text(model.l10n.uploadNote(hasKey: AppSecrets.hasMinimaxKey))
+                    Text(model.l10n.uploadNote(hasKey: AppSecrets.cloudConfigured))
                         .font(.footnote)
                         .foregroundStyle(foregroundMuted)
                         .fixedSize(horizontal: false, vertical: true)
@@ -251,7 +295,7 @@ struct RootView: View {
 
     @ViewBuilder
     private var resumeUploads: some View {
-        if !model.uploadEnabled && AppSecrets.hasMinimaxKey {
+        if !model.uploadEnabled && AppSecrets.cloudConfigured {
             VStack(alignment: .leading, spacing: 8) {
                 Text(model.resumeRemaining == 0 ? model.l10n.resumeExhausted : model.l10n.resumeRemaining(model.resumeRemaining))
                     .font(.subheadline)
@@ -270,6 +314,29 @@ struct RootView: View {
                 .accessibilityIdentifier("home.resumeUpload")
             }
         }
+    }
+}
+
+private struct AimCameraPreview: UIViewRepresentable {
+    let previewLayer: AVCaptureVideoPreviewLayer
+
+    func makeUIView(context: Context) -> AimPreviewHost {
+        let view = AimPreviewHost()
+        view.backgroundColor = .black
+        previewLayer.removeFromSuperlayer()
+        view.layer.addSublayer(previewLayer)
+        return view
+    }
+
+    func updateUIView(_ uiView: AimPreviewHost, context: Context) {
+        previewLayer.frame = uiView.bounds
+    }
+}
+
+private final class AimPreviewHost: UIView {
+    override func layoutSubviews() {
+        super.layoutSubviews()
+        layer.sublayers?.forEach { $0.frame = bounds }
     }
 }
 

@@ -86,8 +86,8 @@ final class RearTorch: @unchecked Sendable {
                     isOn: true,
                     level: 1,
                     supportsLevel: false,
-                    status: "手电筒只支持开/关",
-                    error: "setTorchModeOn 失败，已退回全开：\(error.localizedDescription)"
+                    status: "这台手机只能开关，已开灯",
+                    error: nil
                 )
             }
         } catch {

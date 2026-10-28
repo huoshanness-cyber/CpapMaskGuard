@@ -21,10 +21,12 @@ import androidx.lifecycle.lifecycleScope
 import app.cpapmaskguard.LOG_TAG
 import app.cpapmaskguard.alarm.AlarmController
 import app.cpapmaskguard.audio.SnoreListener
+import app.cpapmaskguard.capture.AimPreviewTarget
 import app.cpapmaskguard.capture.CaptureController
 import app.cpapmaskguard.capture.CameraTuning
 import app.cpapmaskguard.core.CloudUploadPolicy
 import app.cpapmaskguard.core.FrameVote
+import app.cpapmaskguard.core.SettleGate
 import app.cpapmaskguard.core.GuardHealth
 import app.cpapmaskguard.core.GuardTelemetry
 import app.cpapmaskguard.core.SceneChange
@@ -73,6 +75,8 @@ class MonitorService : LifecycleService() {
     private var consecutiveFailures = 0
     private var roundCount = 0
     private var audioStarted = false
+    private var guardStartedElapsed = 0L
+    private var announcedSettleEnd = false
     private var guardHealth = GuardHealth.State()
     private var sceneWatch = SceneChange.State()
     private var lastJudgmentElapsed = 0L
@@ -138,7 +142,14 @@ class MonitorService : LifecycleService() {
     private fun ensureLoop() {
         if (loopJob?.isActive == true) return
         loopJob = lifecycleScope.launch {
-            publish(RunStatus.STARTING, "正在确认面罩", "正在打开摄像头，请保持对准枕头。")
+            guardStartedElapsed = SystemClock.elapsedRealtime()
+            announcedSettleEnd = false
+            val left = SettleGate.secondsRemaining(0)
+            publish(
+                RunStatus.STARTING,
+                "请戴罩躺好（还剩 ${left}s）",
+                "这一分钟内不会因为没戴面罩响铃。正在打开摄像头，请对准枕头。",
+            )
             val prepared = try {
                 withContext(Dispatchers.Default) {
                     detector.prepare(settingsStore.settings().calibrationSkipped)
@@ -147,6 +158,7 @@ class MonitorService : LifecycleService() {
                 throw error
             } catch (error: Exception) {
                 AppLogger.e(LOG_TAG, "基准读失败", error)
+                guardStartedElapsed = 0L
                 publish(RunStatus.ERROR, "基准读不出来", "请重新拍摄多角度基准。${AppLogger.summarize(error)}")
                 return@launch
             }
@@ -165,7 +177,7 @@ class MonitorService : LifecycleService() {
                 capture.bind(
                     settings.captureWidth,
                     settings.captureHeight,
-                    previewView = null,
+                    previewView = settlePreviewView(),
                     useFrontCamera = wantFront,
                     enableTorch = wantTorch,
                     torchLevel = settings.torchLevel,
@@ -176,6 +188,7 @@ class MonitorService : LifecycleService() {
             } catch (error: Exception) {
                 val mode = settingsStore.settings().fillLightMode
                 AppLogger.e(LOG_TAG, "相机打开失败 mode=$mode", error)
+                guardStartedElapsed = 0L
                 val head = if (mode == FillLightMode.FRONT_SCREEN) "前摄打不开" else "相机打不开"
                 val detail = "守护已中断，点此恢复。$head。${AppLogger.summarize(error)}。请回到主界面点开始守护；可改选「后摄 + 自备光源」或重试。"
                 publish(RunStatus.ERROR, "守护已中断，点此恢复", detail)
@@ -194,10 +207,17 @@ class MonitorService : LifecycleService() {
                 FillLightMode.FRONT_SCREEN -> "前摄·屏幕补光"
                 FillLightMode.REAR_AMBIENT -> "后摄·自备光源"
             }
+            val settleLeft = if (inSettle()) {
+                SettleGate.secondsRemaining(SystemClock.elapsedRealtime() - guardStartedElapsed)
+            } else {
+                0
+            }
             publish(
                 RunStatus.MONITORING,
-                "正在确认面罩",
-                if (audioStarted) {
+                if (settleLeft > 0) "请戴罩躺好（还剩 ${settleLeft}s）" else "正在确认面罩",
+                if (settleLeft > 0) {
+                    "这一分钟内不会因为没戴面罩响铃。$prepared · $modeHint"
+                } else if (audioStarted) {
                     "$prepared · $modeHint · 听鼾已开"
                 } else {
                     "$prepared · $modeHint · 听鼾未开（仅相机）"
@@ -209,17 +229,21 @@ class MonitorService : LifecycleService() {
                 val startedAt = SystemClock.elapsedRealtime()
                 val settings = settingsStore.settings()
                 try {
+                    val shotInSettle = inSettle()
                     val wantFront = settings.fillLightMode == FillLightMode.FRONT_SCREEN
                     val wantTorch = settings.fillLightMode == FillLightMode.REAR_AMBIENT && settings.torchEnabled
+                    onSettleEdge()
+                    val wantPreview = settlePreviewView()
                     if (!capture.isBound ||
                         capture.boundWidth != settings.captureWidth ||
                         capture.boundHeight != settings.captureHeight ||
-                        capture.usingFront != wantFront
+                        capture.usingFront != wantFront ||
+                        capture.previewBound != (wantPreview != null)
                     ) {
                         capture.bind(
                             settings.captureWidth,
                             settings.captureHeight,
-                            previewView = null,
+                            previewView = wantPreview,
                             useFrontCamera = wantFront,
                             enableTorch = wantTorch,
                             torchLevel = settings.torchLevel,
@@ -331,6 +355,7 @@ class MonitorService : LifecycleService() {
                         // 角标带判定耗时，颜色匹配仍靠「正常/脱落」字样
                         resultLabel = "$resultLabel · ${decision.inferMs}ms",
                         frameEpochMs = captureEpoch,
+                        capturedInSettle = shotInSettle,
                     )
                 } catch (error: TimeoutCancellationException) {
                     noteFailure("这一张拍太久，下一轮再试")
@@ -366,6 +391,8 @@ class MonitorService : LifecycleService() {
     /** @return true 若已因音频触发报警 */
     private fun maybeAudioOnlyAlarm(): Boolean {
         if (alarm.isPlaying) return false
+        onSettleEdge()
+        if (inSettle()) return false
         if (SystemClock.elapsedRealtime() < ignoreFramesUntil) return false
         if (!snore.isConfirmed()) return false
         val fused = SnoreFusion.fuse(
@@ -386,9 +413,27 @@ class MonitorService : LifecycleService() {
         audioAssisted: Boolean = false,
         resultLabel: String? = null,
         frameEpochMs: Long = System.currentTimeMillis(),
+        capturedInSettle: Boolean = false,
     ) {
+        onSettleEdge()
         val snoreBit = if (audioStarted) " · ${snore.lastHint}" else ""
         val detail = summary + snoreBit
+        if (inSettle() || capturedInSettle) {
+            detector.resetDebounce()
+            val left = SettleGate.secondsRemaining(SystemClock.elapsedRealtime() - guardStartedElapsed)
+            publish(
+                RunStatus.MONITORING,
+                "请戴罩躺好（还剩 ${left}s）",
+                "这一分钟内不会因为没戴面罩响铃。$detail",
+                capture.nightExtension,
+                lastScoreHint = summary,
+                bumpFrame = true,
+                snoreHint = snore.lastHint,
+                resultLabel = resultLabel,
+                frameEpochMs = frameEpochMs,
+            )
+            return
+        }
         if (alarm.isPlaying) {
             publish(
                 RunStatus.ALARMING,
@@ -493,6 +538,7 @@ class MonitorService : LifecycleService() {
         val vote = decision.cloudVote
         val updated = when {
             decision.aimInvalid -> cloudUpload.noteAimInvalid(epochMs)
+            vote == FrameVote.CLOSER_TO_MASK_OFF && inSettle() -> before
             vote != null -> cloudUpload.noteCloud(vote, epochMs)
             else -> {
                 val rolled = CloudUploadPolicy.roll(before, epochMs)
@@ -582,6 +628,8 @@ class MonitorService : LifecycleService() {
 
     private fun stopFromUser() {
         settingsStore.setMonitoringRequested(false)
+        guardStartedElapsed = 0L
+        announcedSettleEnd = false
         loopJob?.cancel()
         loopJob = null
         snore.stop()
@@ -732,6 +780,11 @@ class MonitorService : LifecycleService() {
                 snoreHint = snoreHint ?: it.snoreHint,
                 previewResultLabel = resultLabel ?: it.previewResultLabel,
                 captureLog = if (status == RunStatus.STOPPED) emptyList() else it.captureLog,
+                settleUntilElapsed = when {
+                    status == RunStatus.STOPPED -> 0L
+                    inSettle() -> guardStartedElapsed + SettleGate.WINDOW_MS
+                    else -> 0L
+                },
             )
         }
         if (status != RunStatus.STOPPED) {
@@ -763,6 +816,26 @@ class MonitorService : LifecycleService() {
             wakeLock?.acquire(hold)
             wakeAcquiredAt = now
         }
+    }
+
+    private fun inSettle(): Boolean {
+        if (guardStartedElapsed <= 0L) return false
+        return SystemClock.elapsedRealtime() - guardStartedElapsed < SettleGate.WINDOW_MS
+    }
+
+    private fun settlePreviewView() = if (inSettle()) {
+        AimPreviewTarget.view?.takeIf { it.isAttachedToWindow }
+    } else {
+        null
+    }
+
+    /** 缓冲走完的那一下清掉坐床边积下的脱落计数和打呼确认。 */
+    private fun onSettleEdge() {
+        if (guardStartedElapsed <= 0L || announcedSettleEnd || inSettle()) return
+        announcedSettleEnd = true
+        detector.resetDebounce()
+        snore.clearConfirmation()
+        AppLogger.i(LOG_TAG, "躺好缓冲结束，开始看面罩脱落")
     }
 
     private fun releaseWake() {

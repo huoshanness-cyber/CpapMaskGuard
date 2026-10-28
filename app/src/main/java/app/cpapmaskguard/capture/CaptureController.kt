@@ -54,6 +54,9 @@ class CaptureController(
     var isBound: Boolean = false
         private set
 
+    var previewBound: Boolean = false
+        private set
+
     var boundWidth: Int = 0
         private set
 
@@ -134,6 +137,7 @@ class CaptureController(
                 boundHeight = height
                 usingFront = useFront
                 isBound = true
+                previewBound = previewView != null
                 this.torchLevel = torchLevel.coerceIn(0f, 1f)
                 applyTorch(enableTorchEffective, this.torchLevel)
                 AppLogger.i(
@@ -208,6 +212,7 @@ class CaptureController(
         imageCapture = null
         boundCamera = null
         isBound = false
+        previewBound = false
         torchSupported = false
         torchBrightnessSupported = false
         loggedTorchBrightnessLimit = false

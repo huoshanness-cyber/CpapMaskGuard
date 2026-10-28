@@ -28,8 +28,10 @@
 	<string>$(MINIMAX_API_KEY)</string>
 	<key>MINIMAX_ENDPOINT</key>
 	<string>$(MINIMAX_ENDPOINT)</string>
+	<key>CPAP_RELAY_BASE</key>
+	<string>$(CPAP_RELAY_BASE)</string>
 	<key>NSCameraUsageDescription</key>
-	<string>面罩守护在你亮着屏、停在这个应用里时用相机查看呼吸机面罩。有云端 Key 时，照片会发给 MiniMax 做判定。锁屏或离开应用后不会在后台继续开相机。CpapMaskGuard uses the camera only while the app is open and the screen is on. With a cloud key, stills are sent to MiniMax for classification.</string>
+	<string>面罩守护在你亮着屏、停在这个应用里时用相机查看呼吸机面罩。判定照片发到官方中转 cpap.njxxzf.cn，安装包不含 MiniMax Key。锁屏或离开应用后不会在后台继续开相机。CpapMaskGuard uses the camera only while the app is open and the screen is on. Stills go to the official relay at cpap.njxxzf.cn. The app does not include a MiniMax key.</string>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>面罩守护在守护期间用麦克风做本机鼾声辅助，声音不上传。CpapMaskGuard listens for snoring on the device during a guard session and does not upload audio.</string>
 	<key>GuardNotificationPurpose</key>

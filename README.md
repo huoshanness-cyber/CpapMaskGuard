@@ -72,10 +72,10 @@
 
 - Open in Android Studio (Windows / macOS / Linux).
 - Copy `local.properties.example` → `local.properties`, set `sdk.dir`.
-- Optional: `minimax.api.key` for cloud detection (**never commit** `local.properties`).
+- Cloud calls go to the official relay `https://cpap.njxxzf.cn` with no MiniMax key in the repo. `minimax.api.key` in `local.properties` is optional and unused unless the relay is turned off.
 - Build a debug APK and install on device.
 
-用 Android Studio 打开工程；复制并填写 `local.properties`；可选写入 MiniMax Key；**不要提交**该文件。
+用 Android Studio 打开工程；复制并填写 `local.properties`。云端走官方中转 `https://cpap.njxxzf.cn`，仓库里不要写 MiniMax Key。**不要提交** `local.properties`。
 
 ### iOS foreground monitor / 亮屏前台监测
 

@@ -804,6 +804,45 @@ enum SceneChangePolicy {
     }
 }
 
+/// Lie-down window after Start. The 02:16 session rang on the first MASK_OFF
+/// (~8s, debounce = 1) while the person was still sitting up, with zero MASK_ON.
+enum SettleGate {
+    static let duration: TimeInterval = 60
+    /// Two aim-valid MASK_ON frames in a row. Recorded for the log.
+    /// It does not open the alarm inside [duration].
+    static let sustainedMaskOnFrames = 2
+
+    static func secondsRemaining(elapsed: TimeInterval) -> Int {
+        if elapsed >= duration { return 0 }
+        let left = duration - elapsed
+        return max(1, Int(ceil(left - 0.000_1)))
+    }
+
+    /// MASK_OFF and snore-only alarms stay off for the whole minute.
+    /// After that, the alarm is armed even if the mask was never confirmed,
+    /// so forgetting the mask still rings. `maskConfirmed` cannot shorten the minute:
+    /// a false MASK_ON while arranging tubing must not re-open the alarm.
+    static func maskOffAlarmAllowed(elapsed: TimeInterval, maskConfirmed: Bool) -> Bool {
+        if elapsed < duration { return false }
+        return elapsed >= duration || (maskConfirmed && elapsed >= duration)
+    }
+}
+
+enum TorchLevel {
+    /// Hardware floor. Devices that only switch on/off ignore this and stay full-on.
+    static let minimum = 0.01
+    /// Suggested overnight level. The slider can still go down to [minimum].
+    static let suggested = 0.02
+
+    static func clamp(_ value: Double) -> Double {
+        min(Swift.max(value, minimum), 1)
+    }
+
+    static func clamp(_ value: Float) -> Float {
+        Float(clamp(Double(value)))
+    }
+}
+
 enum MonitorClock {
     static func milliseconds(since date: Date, now: Date = Date()) -> Int {
         max(0, Int((now.timeIntervalSince(date) * 1000).rounded()))
