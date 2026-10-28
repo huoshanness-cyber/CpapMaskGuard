@@ -49,7 +49,11 @@
     <string name="torch_switch">弱光常亮（后摄手电筒）</string>
     <string name="torch_level">弱光亮度 %1$d%%（本机可能仅开关）</string>
     <string name="torch_no_dim_toast">本机手电筒不支持调强弱，只有开/关</string>
-    <string name="torch_hint">高级选项：部分红米手电筒只有开关、无法调强弱。后摄模式默认关灯，请自备台灯/夜灯。整夜建议插电。</string>
+    <string name="torch_hint">过夜建议 2%（滑条 1–60，最低约 1%）。只能开关的手机会按开灯，不会因此关掉。后摄默认关灯，请自备小灯。整夜建议插电。</string>
+    <string name="settle_headline">请戴罩躺好（还剩 %1$ds）</string>
+    <string name="settle_detail">这一分钟内，坐在床边整理管路也不会因为没戴面罩响铃。</string>
+    <string name="aim_preview_caption">对准枕头</string>
+    <string name="aim_preview_need_camera">允许相机后可以先对准枕头</string>
     <string name="preview_switch">看监测画面（预览）</string>
     <string name="preview_switch_hint">默认关闭。打开后用倒计时抓拍静帧，约每 3 秒一张，叠拍摄时刻与检测结果，并显示抓拍日志。约 5 分钟自动关。</string>
     <string name="preview_frame_desc">最近一轮监测照片</string>

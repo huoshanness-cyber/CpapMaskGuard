@@ -27,6 +27,11 @@ data class MonitorSnapshot(
     val previewResultLabel: String? = null,
     /** 最近抓拍结果日志（新在前），最多 [CAPTURE_LOG_MAX] 条。 */
     val captureLog: List<String> = emptyList(),
+    /**
+     * 躺好缓冲结束的 elapsedRealtime。0 表示当前不在缓冲里。
+     * 界面用它每秒刷新「还剩 Xs」，不依赖抓拍间隔。
+     */
+    val settleUntilElapsed: Long = 0L,
 )
 
 /**

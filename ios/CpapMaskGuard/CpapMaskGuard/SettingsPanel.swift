@@ -14,7 +14,7 @@ struct SettingsPanel: View {
                 lightSection
                 phoneSection
                 permissionSection
-                Text(AppSecrets.hasMinimaxKey ? model.l10n.keyStatusReady : model.l10n.keyStatusEmpty)
+                Text(AppSecrets.usesRelay ? model.l10n.relayStatus : (AppSecrets.hasMinimaxKey ? model.l10n.keyStatusReady : model.l10n.keyStatusEmpty))
                     .font(.footnote)
                     .foregroundStyle(secondary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -145,8 +145,8 @@ struct SettingsPanel: View {
                     get: { model.torchLevel },
                     set: { model.setTorchLevel($0) }
                 ),
-                in: 0.05...1,
-                step: 0.05
+                in: 0.01...1,
+                step: 0.01
             )
             .tint(GuardTheme.accent)
             Text(model.l10n.torchHint)

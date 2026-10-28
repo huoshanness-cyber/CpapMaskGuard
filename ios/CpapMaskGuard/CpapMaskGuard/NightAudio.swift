@@ -34,6 +34,25 @@ final class NightAudio: @unchecked Sendable {
         }
     }
 
+    /// Drop a snore confirmation that built up while the person was still sitting up.
+    func resetSnoreConfirmation() async {
+        await withCheckedContinuation { continuation in
+            queue.async {
+                self.tracker.reset()
+                if self.snoreWanted {
+                    self.stored = SnoreSnapshot(
+                        state: .listening,
+                        confirmedForMs: 0,
+                        positives: 0,
+                        windows: self.stored.windows,
+                        rms: self.stored.rms
+                    )
+                }
+                continuation.resume()
+            }
+        }
+    }
+
     func stopSnore() async {
         await withCheckedContinuation { continuation in
             queue.async {

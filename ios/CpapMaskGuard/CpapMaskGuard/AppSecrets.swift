@@ -12,6 +12,26 @@ enum AppSecrets {
 
     static var hasMinimaxKey: Bool { !minimaxAPIKey.isEmpty }
 
+    /// Official relay. Empty or an unsubstituted `$(...)` keeps https://cpap.njxxzf.cn.
+    /// `off` / `none` / `false` disables it and leaves the optional MiniMax key path.
+    static var relayBaseURL: URL? {
+        let raw = (Bundle.main.object(forInfoDictionaryKey: "CPAP_RELAY_BASE") as? String ?? "")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        if raw.isEmpty || raw.contains("$(") {
+            return URL(string: "https://cpap.njxxzf.cn")
+        }
+        let lower = raw.lowercased()
+        if lower == "off" || lower == "none" || lower == "false" { return nil }
+        var trimmed = raw
+        while trimmed.hasSuffix("/") { trimmed.removeLast() }
+        return URL(string: trimmed)
+    }
+
+    static var usesRelay: Bool { relayBaseURL != nil }
+
+    /// Cloud classification is available. The relay does not need a MiniMax key.
+    static var cloudConfigured: Bool { usesRelay || hasMinimaxKey }
+
     /// Override with MINIMAX_ENDPOINT in Secrets.xcconfig. Empty keeps the public MiniMax URL.
     static var minimaxEndpoint: URL {
         let raw = Bundle.main.object(forInfoDictionaryKey: "MINIMAX_ENDPOINT") as? String ?? ""

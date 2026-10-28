@@ -155,8 +155,36 @@ struct L10n {
     }
     var torchHint: String {
         language == .zh
-            ? "滑条范围 5%–100%。过夜请保持偏低并插电。模拟器没有真手电筒，请用 iPhone 真机看。"
-            : "Range is 5%–100%. Keep it low overnight and plug the phone in. The Simulator has no real torch; use an iPhone."
+            ? "过夜建议 2%。滑条最低约 1%。这台手机如果只能开关，会自动开到全亮，不会把开关关掉。模拟器没有真手电筒。"
+            : "2% is the overnight suggestion. The slider goes down to about 1%. Phones that can only switch the light on or off turn it fully on. The Simulator has no torch."
+    }
+    func settleHeadline(_ seconds: Int) -> String {
+        language == .zh
+            ? "请戴罩躺好（还剩 \(seconds)s）"
+            : "Lie down with the mask on (\(seconds)s left)"
+    }
+    var settleDetail: String {
+        language == .zh
+            ? "这一分钟内，坐在床边整理管路也不会因为没戴面罩响铃。"
+            : "For this minute, sitting up to fix the tubing will not ring."
+    }
+    var settleDone: String {
+        language == .zh ? "躺好时间到了，开始看面罩有没有脱落。" : "The lie-down minute is over. Mask-off alarms are on."
+    }
+    var maskSeenWhileSettling: String {
+        language == .zh
+            ? "已经连续看到戴着面罩。这一分钟结束前仍然不响铃。"
+            : "The mask has been seen. The alarm stays off until the minute ends."
+    }
+    var aimAtPillow: String { language == .zh ? "对准枕头" : "Aim at the pillow" }
+    var aimPreviewButton: String { language == .zh ? "先看床头" : "Look at the pillow" }
+    var relayFallback: String {
+        language == .zh ? "官方中转这一张没连上，改用本机 Key。" : "The relay missed this frame. Trying the on-device key."
+    }
+    var relayStatus: String {
+        language == .zh
+            ? "云端：官方中转 cpap.njxxzf.cn，安装包不含 MiniMax Key。"
+            : "Cloud: official relay at cpap.njxxzf.cn. No MiniMax key in the app."
     }
     var keyStatusReady: String {
         language == .zh
@@ -172,7 +200,7 @@ struct L10n {
     func uploadNote(hasKey: Bool) -> String {
         if hasKey {
             return language == .zh
-                ? "全黑、全白或糊成一片才不上云。拿不准会照常问 MiniMax。连续 10 次脱落会停下上传。声音只在本机判断。"
+                ? "全黑、全白或糊成一片才不上云。拿不准会照常上传判定。连续 10 次脱落会停下上传。声音只在本机判断。"
                 : "Only a black, white, or badly blurred frame stays off the cloud. An uncertain frame is still sent. Ten mask-off results in a row stop uploads. Audio stays on the phone."
         }
         return language == .zh
@@ -228,6 +256,7 @@ struct L10n {
     var rowVersion: String { language == .zh ? "版本" : "Version" }
     var healthPending: String { language == .zh ? "还没有样本" : "No sample yet" }
     var keyYes: String { language == .zh ? "已配置" : "Set" }
+    var relayShort: String { language == .zh ? "官方中转" : "Official relay" }
     var keyNo: String { language == .zh ? "未配置" : "Not set" }
     var cameraAllowed: String { language == .zh ? "已允许" : "Allowed" }
     var cameraBlocked: String { language == .zh ? "未允许" : "Not allowed" }
@@ -333,6 +362,10 @@ struct L10n {
         }
         if let error = error as? MiniMaxError {
             return cloudMessage(error)
+        }
+        if let error = error as? RelayError {
+            let text = error.errorDescription ?? valueUnknown
+            return language == .zh ? "这一张没问成：\(text)" : "This frame was not classified: \(text)"
         }
         let text = error.localizedDescription.trimmingCharacters(in: .whitespacesAndNewlines)
         let safe = text.isEmpty ? valueUnknown : text
@@ -545,7 +578,7 @@ struct L10n {
             .trimmingCharacters(in: .whitespacesAndNewlines)
         let build = (info["CFBundleVersion"] as? String ?? "")
             .trimmingCharacters(in: .whitespacesAndNewlines)
-        let short = version.isEmpty ? "0.4.1" : version
+        let short = version.isEmpty ? "0.4.2" : version
         guard !build.isEmpty else { return short }
         return "\(short) (\(build))"
     }

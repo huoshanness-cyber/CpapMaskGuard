@@ -96,7 +96,7 @@ private struct DeviceStatusPage: View {
                     model.lastReadout.map { model.l10n.latencyLine($0) } ?? model.l10n.valueUnknown
                 )
                 row(model.l10n.rowSnore, model.snoreHint.isEmpty ? model.l10n.valueUnknown : model.snoreHint)
-                row(model.l10n.rowKey, AppSecrets.hasMinimaxKey ? model.l10n.keyYes : model.l10n.keyNo)
+                row(model.l10n.rowKey, AppSecrets.usesRelay ? model.l10n.relayShort : (AppSecrets.hasMinimaxKey ? model.l10n.keyYes : model.l10n.keyNo))
             }
         }
         .onAppear(perform: readBattery)

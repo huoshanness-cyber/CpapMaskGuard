@@ -49,6 +49,11 @@ final class GuardModel: ObservableObject {
     @Published var resumeRemaining = CloudUploadPolicy.dailyResumeLimit
     @Published var judgmentAgeSeconds = -1
     @Published var watchdogStale = false
+    /// True while the post-start minute still forbids a mask-off alarm.
+    @Published var settling = false
+    @Published var settleSecondsLeft = 0
+    /// Camera finder is on, before Start or after Stop.
+    @Published var aimPreviewOn = false
 
     private let torch = RearTorch()
     private let cloudMemory = CloudUploadMemory()
@@ -67,6 +72,10 @@ final class GuardModel: ObservableObject {
     private var guardHealth = GuardHealthState()
     private var sceneWatch = SceneWatch()
     private var lastJudgmentAt: Date?
+    private var guardStartedAt: Date?
+    private var maskOnStreak = 0
+    private var alarmArmed = false
+    private var settleTimer: Timer?
 
     init() {
         let defaults = UserDefaults.standard
@@ -74,8 +83,8 @@ final class GuardModel: ObservableObject {
         fillMode = FillLightMode(rawValue: defaults.string(forKey: Key.fillMode) ?? "") ?? .frontScreen
         let brightness = defaults.object(forKey: Key.brightness) as? Double ?? 0.85
         screenBrightness = min(max(brightness, 0.05), 1)
-        let level = defaults.object(forKey: Key.torchLevel) as? Double ?? 0.15
-        torchLevel = min(max(level, 0.05), 1)
+        let level = defaults.object(forKey: Key.torchLevel) as? Double ?? TorchLevel.suggested
+        torchLevel = TorchLevel.clamp(level)
         let storedInterval = defaults.object(forKey: Key.interval) as? Int ?? 8
         intervalSeconds = min(max(storedInterval, 5), 10)
         logs = [SessionLogLine(id: UUID(), date: Date(), text: L10n(language: language).logOpened)]
@@ -115,8 +124,21 @@ final class GuardModel: ObservableObject {
         return l10n.cloudReason(lastReadout.vote ?? .uncertain, raw: lastReadout.raw)
     }
 
+    var previewLayer: AVCaptureVideoPreviewLayer { capture.previewLayer }
+
+    /// Live finder before Start, and again during the lie-down minute.
+    var showsAimPreview: Bool {
+        guard cameraLive else { return false }
+        if settling { return true }
+        if phase == .guarding { return false }
+        return aimPreviewOn
+    }
+
     var headline: String {
-        l10n.headline(
+        if settling && (phase == .guarding || phase == .idle) {
+            return l10n.settleHeadline(settleSecondsLeft)
+        }
+        return l10n.headline(
             phase: phase,
             alarming: alarming,
             failures: consecutiveFailures,
@@ -127,7 +149,10 @@ final class GuardModel: ObservableObject {
     }
 
     var detail: String {
-        l10n.detail(
+        if settling && (phase == .guarding || phase == .idle) {
+            return l10n.settleDetail
+        }
+        return l10n.detail(
             phase: phase,
             mode: fillMode,
             torchOn: torchHardwareOn,
@@ -193,8 +218,8 @@ final class GuardModel: ObservableObject {
             return
         }
         torchEnabled = on
-        if phase == .guarding {
-            let report = await capture.setTorch(enabled: on, level: Float(torchLevel))
+        if phase == .guarding || cameraLive {
+            let report = await capture.setTorch(enabled: on && fillMode == .rearAmbient, level: Float(torchLevel))
             applyTorchReport(report)
         } else if on {
             await applyTorch()
@@ -205,7 +230,7 @@ final class GuardModel: ObservableObject {
     }
 
     func setTorchLevel(_ value: Double) {
-        torchLevel = min(max(value, 0.05), 1)
+        torchLevel = TorchLevel.clamp(value)
         persist()
         guard torchEnabled, fillMode == .rearAmbient else { return }
         Task { await pushTorchLevel() }
@@ -230,6 +255,12 @@ final class GuardModel: ObservableObject {
         debouncer.reset()
         ignoreUntil = nil
         health = nil
+        guardStartedAt = Date()
+        maskOnStreak = 0
+        alarmArmed = false
+        settling = true
+        settleSecondsLeft = SettleGate.secondsRemaining(elapsed: 0)
+        startSettleClock()
         await night.stopSnore()
         await torch.shutdown()
         torchHardwareOn = false
@@ -237,6 +268,7 @@ final class GuardModel: ObservableObject {
         let allowed = await ensureCamera()
         guard token == transition else { return }
         guard allowed else {
+            if token == transition { endSettle() }
             phase = .idle
             record(l10n.logCameraDenied)
             return
@@ -251,6 +283,7 @@ final class GuardModel: ObservableObject {
             applyTorchReport(report)
         } catch {
             cameraLive = false
+            if token == transition { endSettle() }
             phase = .idle
             let message = l10n.failureMessage(error)
             roundNote = l10n.guardInterrupted
@@ -289,6 +322,8 @@ final class GuardModel: ObservableObject {
         phase = .stopped
         alarming = false
         cameraLive = false
+        aimPreviewOn = false
+        endSettle()
         night.stopAlarm()
         await night.stopSnore()
         await capture.stop()
@@ -311,6 +346,8 @@ final class GuardModel: ObservableObject {
         monitorTask = nil
         alarming = false
         cameraLive = false
+        aimPreviewOn = false
+        endSettle()
         night.stopAlarm()
         await night.stopSnore()
         await capture.stop()
@@ -410,18 +447,14 @@ final class GuardModel: ObservableObject {
                 reason = l10n.aimSoftHint
                 _ = cloudMemory.noteAimInvalid(now: Date())
                 publishCloud(cloudMemory.load(now: Date()))
-            } else if AppSecrets.hasMinimaxKey && !cloudMemory.load(now: Date()).uploadEnabled {
+            } else if AppSecrets.cloudConfigured && !cloudMemory.load(now: Date()).uploadEnabled {
                 result = l10n.pausedResult
                 vote = "CLOUD_PAUSED"
                 reason = l10n.pausedReason
-            } else if AppSecrets.hasMinimaxKey {
+            } else if AppSecrets.cloudConfigured {
                 do {
                     let started = Date()
-                    let classified = try await MiniMaxClient.classify(
-                        jpeg: payload,
-                        apiKey: AppSecrets.minimaxAPIKey,
-                        endpoint: AppSecrets.minimaxEndpoint
-                    )
+                    let classified = try await classifyCloud(payload)
                     latency = MonitorClock.milliseconds(since: started)
                     let updated = cloudMemory.noteCloud(classified.vote, now: Date())
                     publishCloud(updated)
@@ -492,6 +525,7 @@ final class GuardModel: ObservableObject {
 
     private func runMonitor(token: Int) async {
         while !Task.isCancelled {
+            refreshSettle()
             if !(await pauseIfInactive(token)) { return }
             guard stillGuarding(token) else { return }
             tickWatchdog()
@@ -515,7 +549,7 @@ final class GuardModel: ObservableObject {
                     let updated = cloudMemory.noteAimInvalid(now: capturedAt)
                     publishCloud(updated)
                     publishAimMiss(payload: payload, capturedAt: capturedAt, started: started)
-                } else if !AppSecrets.hasMinimaxKey {
+                } else if !AppSecrets.cloudConfigured {
                     publishUnjudged(payload: payload, capturedAt: capturedAt, started: started)
                 } else {
                     let state = cloudMemory.load(now: capturedAt)
@@ -573,14 +607,18 @@ final class GuardModel: ObservableObject {
         }
         let classifyStarted = Date()
         do {
-            let classified = try await MiniMaxClient.classify(
-                jpeg: payload,
-                apiKey: AppSecrets.minimaxAPIKey,
-                endpoint: AppSecrets.minimaxEndpoint
-            )
+            let classified = try await classifyCloud(payload)
             guard stillGuarding(token) else { return }
             saveCircuit(CloudCircuitPolicy.onSuccess(circuit))
-            let updated = cloudMemory.noteCloud(classified.vote, now: capturedAt)
+            noteMaskSeen(classified.vote)
+            let armedNow = maskAlarmArmed(at: capturedAt)
+            let updated: CloudUploadState
+            if !armedNow && classified.vote == .maskOff {
+                // Sitting up and arranging tubing must not burn the upload pause.
+                updated = cloudMemory.load(now: capturedAt)
+            } else {
+                updated = cloudMemory.noteCloud(classified.vote, now: capturedAt)
+            }
             publishCloud(updated)
             if !updated.uploadEnabled {
                 sceneWatch = SceneWatch()
@@ -732,6 +770,7 @@ final class GuardModel: ObservableObject {
             jpeg: payload
         ))
         guard hold else { return }
+        guard maskAlarmArmed(at: capturedAt) else { return }
         beginAlarm(summary: l10n.pausedAlarm)
     }
 
@@ -745,16 +784,22 @@ final class GuardModel: ObservableObject {
         let inferMs = MonitorClock.milliseconds(since: classifyStarted)
         let captureToJudgeMs = MonitorClock.milliseconds(since: capturedAt)
         let roundMs = MonitorClock.milliseconds(since: started)
-        let cameraShouldAlarm = debouncer.onVote(classified.vote)
+        let armed = maskAlarmArmed(at: capturedAt)
+        if !armed {
+            debouncer.reset()
+        }
+        let cameraShouldAlarm = armed && debouncer.onVote(classified.vote)
         let snap = night.snapshot()
         snoreHint = l10n.snoreLine(snap)
         let summary = l10n.cloudReason(classified.vote, raw: classified.raw)
-        let decision = SnoreFusion.fuse(
-            cameraShouldAlarm: cameraShouldAlarm,
-            cameraVote: classified.vote,
-            snoreConfirmed: snap.state == .confirmed,
-            snoreConfirmedForMs: snap.confirmedForMs
-        )
+        let decision: AlarmDecision = armed
+            ? SnoreFusion.fuse(
+                cameraShouldAlarm: cameraShouldAlarm,
+                cameraVote: classified.vote,
+                snoreConfirmed: snap.state == .confirmed,
+                snoreConfirmedForMs: snap.confirmedForMs
+            )
+            : .quiet
         if case .pendingSnore(let elapsed, let need) = decision {
             snoreHint = l10n.snorePending(elapsed, need, base: snoreHint)
         }
@@ -870,6 +915,7 @@ final class GuardModel: ObservableObject {
 
     private func maybeAudioOnlyAlarm() {
         guard phase == .guarding, !alarming else { return }
+        guard maskAlarmArmed(at: Date()) else { return }
         let snap = night.snapshot()
         snoreHint = l10n.snoreLine(snap)
         let decision = SnoreFusion.fuse(
@@ -889,6 +935,7 @@ final class GuardModel: ObservableObject {
 
     private func beginAlarm(summary: String) {
         guard phase == .guarding, !alarming else { return }
+        guard maskAlarmArmed(at: Date()) else { return }
         if let ignoreUntil, ignoreUntil > Date() { return }
         alarming = true
         alarmGeneration += 1
@@ -1140,12 +1187,127 @@ final class GuardModel: ObservableObject {
     }
 
     private func pushTorchLevel() async {
-        if phase == .guarding {
+        if phase == .guarding || cameraLive {
             let report = await capture.setTorch(enabled: true, level: Float(torchLevel))
             applyTorchReport(report)
         } else {
             await applyTorch()
         }
+    }
+
+    func openAimPreviewIfAllowed() async {
+        guard AVCaptureDevice.authorizationStatus(for: .video) == .authorized else { return }
+        await openAimPreview()
+    }
+
+    /// Starts the finder without arming the alarm. Start Guard reuses this session.
+    func openAimPreview() async {
+        if phase == .guarding || busy { return }
+        let allowed = await ensureCamera()
+        guard allowed, phase != .guarding else { return }
+        guard isForeground else { return }
+        await torch.shutdown()
+        let position: AVCaptureDevice.Position = fillMode == .frontScreen ? .front : .back
+        let torchOn = fillMode == .rearAmbient && torchEnabled
+        do {
+            let report = try await capture.start(position: position, torchEnabled: torchOn, level: Float(torchLevel))
+            guard phase != .guarding else { return }
+            cameraLive = true
+            aimPreviewOn = true
+            applyTorchReport(report)
+        } catch {
+            if phase != .guarding {
+                cameraLive = false
+                aimPreviewOn = false
+                permissionNote = l10n.failureMessage(error)
+            }
+        }
+    }
+
+    private func classifyCloud(_ jpeg: Data) async throws -> CloudClassification {
+        let version = l10n.appVersionLabel
+        if AppSecrets.usesRelay {
+            let deviceId = DeviceStamp.current()
+            do {
+                return try await CpapRelayClient.shared.classify(
+                    jpeg: jpeg,
+                    deviceId: deviceId,
+                    appVersion: version
+                )
+            } catch {
+                guard AppSecrets.hasMinimaxKey else { throw error }
+                record(l10n.relayFallback)
+                return try await MiniMaxClient.classify(
+                    jpeg: jpeg,
+                    apiKey: AppSecrets.minimaxAPIKey,
+                    endpoint: AppSecrets.minimaxEndpoint
+                )
+            }
+        }
+        return try await MiniMaxClient.classify(
+            jpeg: jpeg,
+            apiKey: AppSecrets.minimaxAPIKey,
+            endpoint: AppSecrets.minimaxEndpoint
+        )
+    }
+
+    private func noteMaskSeen(_ vote: FrameVote) {
+        if vote == .maskOn {
+            maskOnStreak += 1
+            if maskOnStreak == SettleGate.sustainedMaskOnFrames {
+                record(l10n.maskSeenWhileSettling)
+            }
+        } else if vote != .uncertain {
+            maskOnStreak = 0
+        }
+    }
+
+    private func maskAlarmArmed(at date: Date) -> Bool {
+        guard phase == .guarding, let guardStartedAt else { return false }
+        let elapsed = date.timeIntervalSince(guardStartedAt)
+        let confirmed = maskOnStreak >= SettleGate.sustainedMaskOnFrames
+        return SettleGate.maskOffAlarmAllowed(elapsed: elapsed, maskConfirmed: confirmed)
+    }
+
+    private func startSettleClock() {
+        settleTimer?.invalidate()
+        let timer = Timer(timeInterval: 0.5, repeats: true) { [weak self] _ in
+            Task { @MainActor in
+                self?.refreshSettle()
+            }
+        }
+        RunLoop.main.add(timer, forMode: .common)
+        settleTimer = timer
+    }
+
+    private func refreshSettle() {
+        guard phase == .guarding || phase == .idle, let guardStartedAt else {
+            return
+        }
+        let elapsed = Date().timeIntervalSince(guardStartedAt)
+        let confirmed = maskOnStreak >= SettleGate.sustainedMaskOnFrames
+        let allowed = SettleGate.maskOffAlarmAllowed(elapsed: elapsed, maskConfirmed: confirmed)
+        settleSecondsLeft = SettleGate.secondsRemaining(elapsed: elapsed)
+        if allowed && !alarmArmed {
+            alarmArmed = true
+            settling = false
+            debouncer.reset()
+            record(l10n.settleDone)
+            Task { await night.resetSnoreConfirmation() }
+        } else if !allowed {
+            alarmArmed = false
+            settling = true
+        }
+    }
+
+    private func endSettle() {
+        settleTimer?.invalidate()
+        settleTimer = nil
+        guardStartedAt = nil
+        settling = false
+        settleSecondsLeft = 0
+        alarmArmed = false
+        maskOnStreak = 0
     }
 
     private func applyTorch() async {

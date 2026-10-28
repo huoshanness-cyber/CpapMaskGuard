@@ -97,6 +97,35 @@
             android:textStyle="bold"
             android:visibility="gone" />
 
+        <FrameLayout
+            android:id="@+id/aimPreviewCard"
+            android:layout_width="match_parent"
+            android:layout_height="220dp"
+            android:layout_marginTop="16dp"
+            android:background="@color/surface">
+
+            <androidx.camera.view.PreviewView
+                android:id="@+id/aimPreview"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent" />
+
+            <TextView
+                android:id="@+id/aimPreviewCaption"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_gravity="bottom|start"
+                android:layout_margin="10dp"
+                android:background="#73000000"
+                android:paddingLeft="10dp"
+                android:paddingTop="6dp"
+                android:paddingRight="10dp"
+                android:paddingBottom="6dp"
+                android:text="@string/aim_preview_caption"
+                android:textColor="@android:color/white"
+                android:textSize="14sp"
+                android:textStyle="bold" />
+        </FrameLayout>
+
         <com.google.android.material.button.MaterialButton
             android:id="@+id/primaryButton"
             style="@style/Widget.Cpap.ButtonHero"
@@ -619,10 +648,10 @@
                     android:id="@+id/torchSlider"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:stepSize="0.05"
-                    android:value="0.15"
-                    android:valueFrom="0.05"
-                    android:valueTo="0.6" />
+                    android:stepSize="1"
+                    android:value="2"
+                    android:valueFrom="1"
+                    android:valueTo="60" />
 
                 <TextView
                     android:layout_width="match_parent"

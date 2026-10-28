@@ -9,4 +9,5 @@ DEVELOPMENT_TEAM = H45MTM24C4
 
 MINIMAX_API_KEY =
 MINIMAX_ENDPOINT = https://api.minimax.cn/v1/chat/completions
+CPAP_RELAY_BASE = https://cpap.njxxzf.cn
 #include? "Secrets.xcconfig"
