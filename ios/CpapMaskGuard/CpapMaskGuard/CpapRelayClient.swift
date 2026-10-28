@@ -76,6 +76,9 @@ actor CpapRelayClient {
             "jpeg_quality": 55,
             "exif_stripped": true,
         ]
+        // cpap.classify.v1 is image-only. The gateway owns the MiniMax call and does not
+        // take a client prompt. Direct MiniMax (relay off, or relay down with a local key)
+        // sends MiniMaxClient.prompt, including the side-sleep MASK_ON rule.
         let body: [String: Any] = [
             "schema": "cpap.classify.v1",
             "captured_at": Int(Date().timeIntervalSince1970 * 1000),
