@@ -40,7 +40,14 @@ enum LabelParser {
     }
 }
 
-/// One MASK_OFF frame is enough (`DetectionConfig.DEBOUNCE_CONSECUTIVE` = 1).
+/// Same meaning as Android `DetectionConfig.DEBOUNCE_CONSECUTIVE`.
+enum DetectionConfig {
+    /// Two frames. One side-sleep mislabel must not ring.
+    static let debounceConsecutive = 2
+}
+
+/// Two consecutive MASK_OFF frames are required (`DetectionConfig.debounceConsecutive` = 2).
+/// A single MASK_OFF does not ring.
 /// NO_PERSON clears the streak and does not alarm. Too many UNCERTAIN frames clear it too.
 final class Debouncer {
     private let required: Int
@@ -48,7 +55,7 @@ final class Debouncer {
     private(set) var maskOffStreak = 0
     private(set) var uncertainStreak = 0
 
-    init(required: Int = 1, maxUncertainStreak: Int = 2) {
+    init(required: Int = DetectionConfig.debounceConsecutive, maxUncertainStreak: Int = 2) {
         self.required = required
         self.maxUncertainStreak = maxUncertainStreak
     }

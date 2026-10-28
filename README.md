@@ -7,7 +7,7 @@
 
 ## English
 
-**CpapMaskGuard** is an Android app for **CPAP / sleep-apnea users** (especially moderate+ severity) who wear a mask at night. It uses the phone **rear camera + torch** to watch whether the mask is on or off. If the mask detaches, it alarms in about **9 seconds** so you can put it back on.
+**CpapMaskGuard** is an Android app for **CPAP / sleep-apnea users** (especially moderate+ severity) who wear a mask at night. It uses the phone **rear camera + torch** to watch whether the mask is on or off. If the mask detaches, it alarms after **two** off frames in a row (about 8–16 seconds at the default interval) so you can put it back on.
 
 **Detection:** the phone skips the cloud only for a clearly black, white, or badly blurred frame. A face is not required (a full-face mask often has no detectable eyes). Uncertain frames are sent. Ten cloud “mask off” answers in a row stop further uploads until you tap “mask is on”, or until the scene clearly changes for three frames (10 resumes per Shanghai **sleep day**, which rolls at noon, not midnight). After the resume quota is used up, Android keeps classifying on device and listening for snore. If there is no key or the cloud request fails, the offline fallback is still the on-device classifier (mask on / off). Two cloud failures in a row prefer that local path for five minutes.
 
@@ -17,7 +17,7 @@
 
 - Built for CPAP / sleep-apnea users who wear a mask overnight
 - Rear camera + torch monitoring (bedside stand aimed at the pillow)
-- Alarms within ~9 seconds when the mask comes off
+- Alarms after two consecutive mask-off frames (about 8–16 seconds)
 - Primary: cloud MiniMax-M3; offline fallback: EfficientNet-Lite0 binary classifier
 - Capture reference photos without / with the mask
 - One-tap **Start Guard** / **Stop Guard**, status in plain language
@@ -31,7 +31,7 @@
 
 ## 中文
 
-**面罩守护（CpapMaskGuard）**面向夜间佩戴呼吸机面罩的 **CPAP / 睡眠呼吸暂停用户**（尤其中度及以上）。用手机**后置摄像头 + 手电筒**监测面罩是否还在脸上；一旦脱落，约 **9 秒内**大声提醒，方便重新戴上。
+**面罩守护（CpapMaskGuard）**面向夜间佩戴呼吸机面罩的 **CPAP / 睡眠呼吸暂停用户**（尤其中度及以上）。用手机**后置摄像头 + 手电筒**监测面罩是否还在脸上；一旦脱落，连续两帧都判脱落才大声提醒（默认间隔约 8 秒，大约 8–16 秒）。
 
 **判定：**明确的全黑、全白或严重模糊才不上云；没检出人脸也会上云（全脸面罩经常检不出眼睛），拿不准同样上云（**MiniMax-M3**）。云端连续 10 次判脱落就停止上传。恢复以点「我戴好了」为主；画面明显变化并连续确认后也会自动恢复一次。每个上海睡眠日（中午 12:00 换日，不是午夜）最多 10 次。次数用尽后安卓继续本机判断并听鼾。断网或没有 Key 时用本机分类兜底。云端连续失败 2 次后，5 分钟内优先本机，大约每分钟才探一次。
 
@@ -41,7 +41,7 @@
 
 - 为夜间戴呼吸机面罩的睡眠呼吸暂停用户设计
 - 后置摄像头 + 手电筒床头监测
-- 面罩脱落约 9 秒内报警
+- 连续两帧判面罩脱落才报警（大约 8–16 秒）
 - 主路径：云端 MiniMax-M3；离线备用：EfficientNet-Lite0 二分类
 - 先拍「没戴 / 戴着」基准照片
 - 一键「开始守护 / 停止守护」，状态用人话显示
@@ -63,8 +63,8 @@
    先拍几张没戴面罩，再拍戴着面罩。
 4. Tap **Start Guard**, lie down with the mask on.  
    点「开始守护」，戴着面罩躺下。
-5. Status should show mask OK; remove the mask and the alarm should sound in several seconds (~9s in our bedside test).  
-   状态应显示面罩正常；摘下面罩后数秒内应报警（床头实测约 9 秒）。
+5. Status should show mask OK; remove the mask and the alarm should sound after two consecutive off frames (about one capture interval apart).  
+   状态应显示面罩正常；摘下面罩后，连续两帧都判脱落才响（默认约 8 秒一张）。
 
 ---
 
@@ -80,7 +80,7 @@
 ### iOS foreground monitor / 亮屏前台监测
 
 Project / 工程：`ios/CpapMaskGuard/CpapMaskGuard.xcodeproj`  
-Target device / 目标机：iPhone, including iPhone 17 Pro Max. Portrait only. Marketing version **0.4.1** (build 6). 监测和样张从视频流取帧，国行不再响快门声。
+Target device / 目标机：iPhone, including iPhone 17 Pro Max. Portrait only. Marketing version **0.4.2** (build 8). 监测和样张从视频流取帧，国行不再响快门声。
 
 iOS **cannot** keep the camera on in the true background. The home screen says so. Lock the screen or switch apps and capture, the siren, and the fill light all stop. There is no「使用前检查本机」and no burn-in page.
 
@@ -91,8 +91,8 @@ iOS **不能**在真正的后台开着相机。主屏写明了这一点。锁屏
 1. Put the phone where the chosen camera can see the pillow. Front mode points the **screen** at the pillow (full white fill, brightness slider). Rear mode points the **rear camera** at the pillow and uses your own lamp; the torch is optional, off by default, and the slider calls `setTorchModeOn(level:)`.
 2. Copy `ios/CpapMaskGuard/Config/Secrets.xcconfig.example` to `Secrets.xcconfig` in the same folder (gitignored). Set `MINIMAX_API_KEY` there. The app reads it from Info.plist at runtime. **Never commit a real key.** Without a key, frames are not uploaded and the cloud cannot classify them.
 3. Tap **开始守护 / Start guard**. The app asks for the **camera** (required), then the **microphone** (local snore cue only, audio is not uploaded) and **notifications** (mask-off alert). Idle timer is disabled so the screen stays on while you remain in the app.
-4. About every **8 seconds** (slider **5–10s**, same range as the Android non-low-end policy) it grabs a JPEG, shrinks the long edge to 640, and POSTs it to `https://api.minimax.cn/v1/chat/completions` as **MiniMax-M3** with thinking **disabled**, image **detail low**, temperature 0.1, and max 64 completion tokens. The prompt matches the Android client.
-5. The home card shows **capture time**, **result** (`面罩正常` / `面罩脱落` / `未检测到人` / `不确定`), and **latency** (judge / capture-to-judge / round). One `MASK_OFF` frame starts the siren. `NO_PERSON` does not. The siren loops until you tap **停止铃声**; guarding continues, with a 2 second quiet period. **停止守护** stops the camera, the light, and the sound.
+4. About every **8 seconds** (slider **5–10s**, same range as the Android non-low-end policy) it grabs a JPEG, shrinks the long edge to 640, and POSTs it to `https://api.minimax.cn/v1/chat/completions` as **MiniMax-M3** with thinking **disabled**, image **detail low**, temperature 0.1, and max 64 completion tokens. The prompt matches the Android client: side sleep, only the back of the head or a side of the face, or the headband / corrugated tube still on the face or bedside, is still **MASK_ON**.
+5. The home card shows **capture time**, **result** (`面罩正常` / `面罩脱落` / `未检测到人` / `不确定`), and **latency** (judge / capture-to-judge / round). Two consecutive `MASK_OFF` frames start the siren. One `MASK_OFF` does not. `NO_PERSON` does not. The siren loops until you tap **停止铃声**; guarding continues, with a 2 second quiet period. **停止守护** stops the camera, the light, and the sound.
 6. If the microphone is allowed, a local RMS / low-frequency / zero-cross heuristic can confirm snoring and alarm on its own (about 6s, or 12s when the camera just said the mask is on). Snore never blocks the camera. If the mic fails, capture continues.
 7. The siren uses media playback, so the silent switch does not mute it, but a low side-button volume still does. The app cannot force the hardware volume. Raise it before sleep. Vibration and a notification are the backup.
 8. Settings → 本机状态 / 拍几张戴着面罩的样子 / 查看日志 stay on the navigation stack (the 0.3.8 crash fix). Status is read-only plus a health score that **does not** stop the guard. Sample frames (latest 12 JPEG + JSON) live under Application Support `MaskFrames` and are not uploaded as files. The log list is memory-only for this launch.
@@ -100,8 +100,8 @@ iOS **不能**在真正的后台开着相机。主屏写明了这一点。锁屏
 1. 把手机摆到能看见枕头的位置。前摄模式让**屏幕**朝向枕头（整屏白、亮度滑条）。后摄模式让**后摄**朝向枕头，默认用你自己的灯；手电筒可选，默认关，滑条走 `setTorchModeOn(level:)`。
 2. 把 `ios/CpapMaskGuard/Config/Secrets.xcconfig.example` 复制成同目录 `Secrets.xcconfig`（已 gitignore），写上 `MINIMAX_API_KEY`。运行时从 Info.plist 读取。**不要把真 Key 提交进 git。** 没有 Key 时照片不会上传，云端也不能判定。
 3. 点 **开始守护**。会先要**相机**（必须）。然后要**麦克风**（只在本机听鼾，声音不上传）和**通知**（脱落提醒）。守护期间关闭自动锁屏，但你必须留在这个应用里。
-4. 默认大约每 **8 秒**一张（滑条 **5–10 秒**，与安卓非低端档相同）。JPEG 长边缩到 640，POST 到 `https://api.minimax.cn/v1/chat/completions`，模型 **MiniMax-M3**，思考关闭，图片 detail 为 low，temperature 0.1，最多 64 个 completion token。提示词与安卓客户端一致。
-5. 主屏显示**拍摄时间**、**结果**（面罩正常 / 面罩脱落 / 未检测到人 / 不确定）和**耗时**（判定 / 拍到判定 / 整轮）。一帧 `MASK_OFF` 就响铃。`NO_PERSON` 不响。铃声要自己点 **停止铃声** 才停，守护继续，并安静约 2 秒。**停止守护**会关掉相机、补光和铃声。
+4. 默认大约每 **8 秒**一张（滑条 **5–10 秒**，与安卓非低端档相同）。JPEG 长边缩到 640，POST 到 `https://api.minimax.cn/v1/chat/completions`，模型 **MiniMax-M3**，思考关闭，图片 detail 为 low，temperature 0.1，最多 64 个 completion token。提示词与安卓客户端一致：侧睡、只见后脑勺或侧脸、头带或波纹管仍在脸上或床边，仍判 **MASK_ON**。
+5. 主屏显示**拍摄时间**、**结果**（面罩正常 / 面罩脱落 / 未检测到人 / 不确定）和**耗时**（判定 / 拍到判定 / 整轮）。连续两帧 `MASK_OFF` 才响铃。单独一帧不响。`NO_PERSON` 不响。铃声要自己点 **停止铃声** 才停，守护继续，并安静约 2 秒。**停止守护**会关掉相机、补光和铃声。
 6. 允许麦克风后，本机用响度、低频和过零率听鼾，确认打呼后可以单独响铃（相机没说「戴着」时约 6 秒，刚判成戴着时约 12 秒）。听鼾不挡住拍照。麦克风失败时仍然只看相机。
 7. 铃声走媒体播放，静音拨片不会把它关掉，但侧边音量很低就会听不见。应用不能强行把系统音量拉满。睡前请把音量调大。震动和通知是辅助。
 8. 设置里的本机状态、拍几张戴着面罩的样子、查看日志仍走导航栈（0.3.8 的闪退修复还在）。本机状态只读，外加一个**不会因此停守护**的健康分。样张最多留 12 张 JPEG 和 JSON，在 Application Support 的 `MaskFrames`，这些文件本身不上传。日志只在这一次打开的内存里。

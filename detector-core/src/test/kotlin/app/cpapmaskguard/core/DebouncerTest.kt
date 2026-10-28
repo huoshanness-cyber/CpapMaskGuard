@@ -9,7 +9,9 @@ class DebouncerTest {
     @Test
     fun alarmsAfterRequiredConsecutiveMaskOffVotes() {
         val debouncer = Debouncer()
-        // DEBOUNCE_CONSECUTIVE default is 1 → first MASK_OFF alarms
+        // Default is 2: one MASK_OFF must not ring.
+        assertFalse(debouncer.onVote(FrameVote.CLOSER_TO_MASK_OFF))
+        assertEquals(1, debouncer.maskOffStreak)
         assertTrue(debouncer.onVote(FrameVote.CLOSER_TO_MASK_OFF))
         assertEquals(DetectionConfig.DEBOUNCE_CONSECUTIVE, debouncer.maskOffStreak)
         assertFalse(debouncer.onVote(FrameVote.CLOSER_TO_MASK_OFF))
@@ -61,6 +63,7 @@ class DebouncerTest {
         }
         debouncer.reset()
         assertEquals(0, debouncer.maskOffStreak)
+        assertFalse(debouncer.onVote(FrameVote.CLOSER_TO_MASK_OFF))
         assertTrue(debouncer.onVote(FrameVote.CLOSER_TO_MASK_OFF))
     }
 }

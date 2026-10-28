@@ -1,8 +1,8 @@
 package app.cpapmaskguard.core
 
 /**
- * 连续确认。默认 [DetectionConfig.DEBOUNCE_CONSECUTIVE]=1，即单帧「更像没戴」即可响铃，
- * 以满足约 10–30 秒内叫醒的时效（再叠加抓拍间隔）。
+ * 连续确认。默认 [DetectionConfig.DEBOUNCE_CONSECUTIVE]=2。
+ * 单帧「更像没戴」不响铃，避免侧睡被云端误判成脱落就立刻叫。
  * 「无人」会清票且不报警。「看不清」连续太多次也会清票。
  */
 class Debouncer(

@@ -9,10 +9,10 @@ package app.cpapmaskguard.core
 object DetectionConfig {
     /**
      * 连续多少帧都「更接近没戴面罩」才响铃。
-     * 临床一次呼吸暂停事件约 ≥10 秒；目标 10–30 秒内叫醒，
-     * 因此默认 1（单帧即可），最多不要超过 2。
+     * 真机夜测：侧睡仍戴罩时，云端会把单独一帧判成脱落。
+     * 默认 2，这一帧不响。抓拍大约 8 秒一张，第二帧仍在大约 10–30 秒的叫醒窗口里。
      */
-    const val DEBOUNCE_CONSECUTIVE = 1
+    const val DEBOUNCE_CONSECUTIVE = 2
 
     /**
      * 连续多少帧「看不清 / 两边差不多 / 无人」之后，把已经累计的脱落票清掉。
