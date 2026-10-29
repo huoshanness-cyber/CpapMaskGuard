@@ -224,8 +224,19 @@ struct L10n {
     }
     var logsComingSoon: String {
         language == .zh
-            ? "下面是这一次打开应用的操作和每一轮判定。只在内存里，关掉应用就没了，也不会上传。"
-            : "Below is what happened during this launch, including each judgment. It stays in memory, disappears when the app closes, and is not uploaded."
+            ? "上面是这一次打开后的操作。关掉应用后，内存里的这几行会没掉，但夜间记录还在本机，不会上传。"
+            : "Above is this launch. Those lines leave memory when the app closes. The overnight file on this phone stays, and it is not uploaded."
+    }
+    var logsDiskTitle: String {
+        language == .zh ? "本机夜间记录" : "Overnight file"
+    }
+    var logsDiskHint: String {
+        language == .zh
+            ? "文件在 Application Support/MaskFrames/night-events.jsonl。失败、熔断、次数用完都会记，不靠最近 12 张样张。大约保留 48 小时或 8MB。"
+            : "File: Application Support/MaskFrames/night-events.jsonl. Failures, the circuit, and classify quota are logged there. The latest 12 photos are not the history. About 48 hours, or 8MB."
+    }
+    var logsDiskEmpty: String {
+        language == .zh ? "还没有写到本机的夜间记录。" : "No overnight file yet."
     }
     var logsEmpty: String { language == .zh ? "还没有日志。" : "No log lines yet." }
     var samplesEmpty: String { language == .zh ? "还没有样张。" : "No sample frames yet." }
@@ -532,6 +543,43 @@ struct L10n {
             ? "今晚的恢复次数已用完。继续本机听鼾兜底，不再上传画面。"
             : "No upload resumes left tonight. Snore detection continues on this phone, without sending photos."
     }
+    var gatewayLimitedResult: String {
+        language == .zh ? "云端识别次数已用完" : "Cloud classify quota used up"
+    }
+    var gatewayLimitedReason: String {
+        language == .zh
+            ? "这一轮没有上传。云端识别次数用完了，不是「恢复上传」的次数。守护还在。"
+            : "This round was not uploaded. The cloud classify quota is used up. That is not the upload-resume count. Guard stays on."
+    }
+    func gatewayQuotaExhausted(_ quota: GatewayQuota) -> String {
+        language == .zh
+            ? "今晚的云端识别次数已用完（已用 \(quota.classifyUsed)/\(quota.classifyLimit)）。这不是「今晚的恢复次数」。守护还在，暂时不再上传画面，中午重置。"
+            : "Cloud classify quota is used up tonight (\(quota.classifyUsed)/\(quota.classifyLimit)). This is not the upload-resume count. Guard stays on and skips uploads until noon."
+    }
+    var gatewayQuotaExhaustedUnknown: String {
+        language == .zh
+            ? "今晚的云端识别次数已用完（中转返回 429）。这不是「今晚的恢复次数」。守护还在，暂时不再上传画面。"
+            : "Cloud classify quota is used up tonight (relay HTTP 429). This is not the upload-resume count. Guard stays on and skips uploads."
+    }
+    func gatewayQuotaLow(_ quota: GatewayQuota) -> String {
+        language == .zh
+            ? "云端识别还剩 \(quota.classifyRemaining) 次（已用 \(quota.classifyUsed)/\(quota.classifyLimit)）。用完会暂停上传。这和「今晚还可恢复上传」不是一回事。"
+            : "\(quota.classifyRemaining) cloud classify calls left tonight (\(quota.classifyUsed)/\(quota.classifyLimit)). Running out pauses uploads. That is separate from upload resumes."
+    }
+    var circuitOpened: String {
+        language == .zh ? "云端熔断已打开，接下来几分钟先不上传" : "Cloud circuit opened. Uploads pause for a few minutes."
+    }
+    var circuitClosed: String {
+        language == .zh ? "云端熔断已关闭，继续上传判定" : "Cloud circuit closed. Uploads resume."
+    }
+    var appWillStop: String { language == .zh ? "应用将退出" : "App will exit" }
+    func cameraInterrupted(_ raw: String) -> String {
+        language == .zh ? "相机会话中断 \(raw)" : "Camera session interrupted \(raw)"
+    }
+    var cameraResumed: String { language == .zh ? "相机会话已恢复" : "Camera session resumed" }
+    func cameraRuntime(_ raw: String) -> String {
+        language == .zh ? "相机运行出错 \(raw)" : "Camera runtime error \(raw)"
+    }
     func resumeAccepted(_ count: Int) -> String {
         language == .zh ? "已恢复上传，今晚还可恢复 \(count) 次" : "Uploads resumed. \(count) resumes left tonight."
     }
@@ -571,7 +619,7 @@ struct L10n {
             : "\(streak) mask-off results in a row. Uploads stopped. The alarm continues. \(remaining) resumes left tonight."
     }
 
-    /// Marketing version and build from the bundle, for example `0.4.1 (6)`.
+    /// Marketing version and build from the bundle, for example `0.4.2 (9)`.
     var appVersionLabel: String {
         let info = Bundle.main.infoDictionary ?? [:]
         let version = (info["CFBundleShortVersionString"] as? String ?? "")

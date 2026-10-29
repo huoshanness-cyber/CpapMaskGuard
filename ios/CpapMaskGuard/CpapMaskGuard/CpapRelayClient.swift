@@ -5,7 +5,7 @@ import UIKit
 enum RelayError: LocalizedError {
     case disabled
     case emptyImage
-    case http(Int, String)
+    case http(RelayHTTPError)
     case badJSON
     case transport(String)
 
@@ -15,8 +15,8 @@ enum RelayError: LocalizedError {
             return "官方中转已关闭"
         case .emptyImage:
             return "这一张是空的"
-        case .http(let code, let body):
-            return "中转 HTTP \(code) \(body)"
+        case .http(let http):
+            return "中转 HTTP \(http.status) \(http.snippet)"
         case .badJSON:
             return "中转返回看不懂"
         case .transport(let note):
@@ -48,7 +48,7 @@ actor CpapRelayClient {
                 allowRetry: true
             )
         } catch let error as RelayError {
-            guard case .http(401, _) = error else { throw error }
+            guard case .http(let http) = error, http.status == 401 else { throw error }
             accessToken = nil
             tokenExpiry = .distantPast
             return try await classifyOnce(
@@ -94,10 +94,10 @@ actor CpapRelayClient {
             timeout: 20
         )
         if code == 401 && allowRetry {
-            throw RelayError.http(401, clip(raw))
+            throw RelayError.http(httpFailure(401, raw))
         }
         guard (200...299).contains(code) else {
-            throw RelayError.http(code, clip(raw))
+            throw RelayError.http(httpFailure(code, raw))
         }
         return try parseClassify(raw)
     }
@@ -124,7 +124,7 @@ actor CpapRelayClient {
             timeout: 12
         )
         guard (200...299).contains(code) else {
-            throw RelayError.http(code, clip(raw))
+            throw RelayError.http(httpFailure(code, raw))
         }
         guard
             let json = try? JSONSerialization.jsonObject(with: Data(raw.utf8)) as? [String: Any],
@@ -151,7 +151,7 @@ actor CpapRelayClient {
             timeout: 12
         )
         guard (200...299).contains(code) else {
-            throw RelayError.http(code, clip(raw))
+            throw RelayError.http(httpFailure(code, raw))
         }
         guard
             let json = try? JSONSerialization.jsonObject(with: Data(raw.utf8)) as? [String: Any],
@@ -212,12 +212,35 @@ actor CpapRelayClient {
         let completion = (usage?["completion_tokens"] as? NSNumber)?.intValue
             ?? (usage?["output_tokens"] as? NSNumber)?.intValue
             ?? -1
+        let meta = GatewayQuotaParsing.read(json)
+        var quota = meta.quota
+        if quota?.sleepDay.isEmpty == true, let day = meta.sleepDay {
+            quota?.sleepDay = day
+        }
         return CloudClassification(
             vote: vote,
             confidence: vote == .uncertain ? 0.35 : 0.85,
             raw: String((modelText.isEmpty ? voteRaw : modelText).prefix(80)),
             promptTokens: prompt,
-            completionTokens: completion
+            completionTokens: completion,
+            quota: quota,
+            sleepDay: meta.sleepDay
+        )
+    }
+
+    private func httpFailure(_ code: Int, _ raw: String) -> RelayHTTPError {
+        let json = (try? JSONSerialization.jsonObject(with: Data(raw.utf8))) as? [String: Any]
+        let meta = json.map { GatewayQuotaParsing.read($0) }
+        var quota = meta?.quota
+        if quota?.sleepDay.isEmpty == true, let day = meta?.sleepDay {
+            quota?.sleepDay = day
+        }
+        return RelayHTTPError(
+            status: code,
+            snippet: clip(raw),
+            errorCode: meta?.errorCode,
+            sleepDay: meta?.sleepDay,
+            quota: quota
         )
     }
 
