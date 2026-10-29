@@ -17,8 +17,6 @@ struct CaptureReadout: Equatable {
     var aimMissed: Bool = false
     var cloudPaused: Bool = false
     var localOnly: Bool = false
-    /// Relay classify budget is empty. Not the upload-resume counter.
-    var gatewayLimited: Bool = false
 }
 
 @MainActor
@@ -51,6 +49,10 @@ final class GuardModel: ObservableObject {
     @Published var resumeRemaining = CloudUploadPolicy.dailyResumeLimit
     /// Last classify budget from the relay. Nil until a response includes `quota`.
     @Published private(set) var gatewayQuota: GatewayQuota?
+    /// Relay answered 429 or remaining 0. Display only. The classify loop keeps running.
+    @Published private(set) var relayClassifyCapped = false
+    /// Visible while a continuous wear episode has already passed 12 hours.
+    @Published private(set) var longWearNote: String?
     @Published var judgmentAgeSeconds = -1
     @Published var watchdogStale = false
     /// True while the post-start minute still forbids a mask-off alarm.
@@ -80,8 +82,8 @@ final class GuardModel: ObservableObject {
     private var maskOnStreak = 0
     private var alarmArmed = false
     private var settleTimer: Timer?
-    private var lastGatewayProbe = Date.distantPast
-    private var cycleQuotaProbe = false
+    private var wearState = ContinuousWearState()
+    private var loggedUnknownQuotaCap = false
 
     init() {
         let defaults = UserDefaults.standard
@@ -99,6 +101,9 @@ final class GuardModel: ObservableObject {
         uploadEnabled = stored.uploadEnabled
         resumeRemaining = CloudUploadPolicy.remaining(stored)
         gatewayQuota = GatewayQuotaStore.load()
+        #if DEBUG
+        ContinuousWearPolicy.selfCheck()
+        #endif
         capture.setSessionHandler { [weak self] raw in
             Task { @MainActor in
                 self?.noteCameraSession(raw)
@@ -116,11 +121,25 @@ final class GuardModel: ObservableObject {
         }
     }
 
-    func record(_ text: String, kind: String = "lifecycle") {
+    func record(
+        _ text: String,
+        kind: String = "lifecycle",
+        vote: String? = nil,
+        extras: [String: Any] = [:]
+    ) {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
         appendMemory(trimmed)
-        writeEvent(kind: kind, note: trimmed, vote: nil, error: nil, httpStatus: nil, quotaProbe: false, sleepDay: nil)
+        writeEvent(
+            kind: kind,
+            note: trimmed,
+            vote: vote,
+            error: nil,
+            httpStatus: nil,
+            quotaProbe: false,
+            sleepDay: nil,
+            extras: extras
+        )
     }
 
     private func appendMemory(_ text: String) {
@@ -135,13 +154,14 @@ final class GuardModel: ObservableObject {
 
     var l10n: L10n { L10n(language: language) }
 
-    /// Banner when the relay classify budget is low or empty. Separate from resume copy.
+    /// Banner when the relay reports a low or empty classify budget. Separate from resume copy.
+    /// Empty does not stop the guard loop.
     var gatewayQuotaLine: String? {
-        if gatewayExhaustedNow() {
-            if let quota = quotaForToday() {
-                return l10n.gatewayQuotaExhausted(quota)
-            }
-            return l10n.gatewayQuotaExhaustedUnknown
+        if let quota = quotaForToday(), quota.classifyRemaining <= 0 {
+            return l10n.gatewayQuotaSoftEmpty(quota)
+        }
+        if relayClassifyCapped {
+            return l10n.gatewayQuotaSoftUnknown
         }
         if let quota = quotaForToday(), GatewayQuotaPolicy.isLow(quota) {
             return l10n.gatewayQuotaLow(quota)
@@ -151,7 +171,6 @@ final class GuardModel: ObservableObject {
 
     var displayResult: String {
         guard let lastReadout else { return "" }
-        if lastReadout.gatewayLimited { return l10n.gatewayLimitedResult }
         if lastReadout.aimMissed { return l10n.aimSoftResult }
         if lastReadout.localOnly && !lastReadout.alarmed && !alarming { return l10n.localOnlyResult }
         if lastReadout.cloudPaused && !lastReadout.alarmed && !alarming { return l10n.pausedResult }
@@ -161,7 +180,6 @@ final class GuardModel: ObservableObject {
 
     var displayReason: String {
         guard let lastReadout else { return "" }
-        if lastReadout.gatewayLimited { return l10n.gatewayLimitedReason }
         if lastReadout.aimMissed { return l10n.aimSoftHint }
         if lastReadout.localOnly { return l10n.resumeExhausted }
         if lastReadout.cloudPaused { return l10n.pausedReason }
@@ -302,6 +320,7 @@ final class GuardModel: ObservableObject {
         health = nil
         guardStartedAt = Date()
         maskOnStreak = 0
+        resetContinuousWear()
         alarmArmed = false
         settling = true
         settleSecondsLeft = SettleGate.secondsRemaining(elapsed: 0)
@@ -514,7 +533,7 @@ final class GuardModel: ObservableObject {
                     let http = absorbRelayFailure(error)
                     reason = l10n.failureMessage(error)
                     let code = http?.status == 429
-                        ? (http?.errorCode ?? "quota_exhausted")
+                        ? "quota_retry"
                         : (http?.errorCode ?? (http == nil ? "error" : "http_\(http?.status ?? 0)"))
                     writeEvent(
                         kind: "cycle",
@@ -610,10 +629,8 @@ final class GuardModel: ObservableObject {
                     publishAimMiss(payload: payload, capturedAt: capturedAt, started: started)
                 } else if !AppSecrets.cloudConfigured {
                     publishUnjudged(payload: payload, capturedAt: capturedAt, started: started)
-                } else if gatewayGate(now: capturedAt) == .skip {
-                    publishGatewaySkip(payload: payload, capturedAt: capturedAt, started: started)
                 } else {
-                    let probing = gatewayGate(now: capturedAt) == .probe
+                    // Classify budget (remaining 0 / HTTP 429) does not skip this loop.
                     let state = cloudMemory.load(now: capturedAt)
                     if !state.uploadEnabled {
                         if CloudUploadPolicy.remaining(state) == 0 {
@@ -623,8 +640,6 @@ final class GuardModel: ObservableObject {
                         }
                         considerAutoResume(scan.signature, now: capturedAt)
                     } else {
-                        if probing { lastGatewayProbe = capturedAt }
-                        cycleQuotaProbe = probing
                         try await classifyOrSkip(
                             payload: payload,
                             capturedAt: capturedAt,
@@ -672,13 +687,11 @@ final class GuardModel: ObservableObject {
         let classifyStarted = Date()
         do {
             let classified = try await classifyCloud(payload)
-            guard stillGuarding(token) else {
-                cycleQuotaProbe = false
-                return
-            }
+            guard stillGuarding(token) else { return }
             saveCircuit(CloudCircuitPolicy.onSuccess(circuit))
             noteMaskSeen(classified.vote)
             let armedNow = maskAlarmArmed(at: capturedAt)
+            noteContinuousWear(classified.vote, armed: armedNow, at: capturedAt)
             let updated: CloudUploadState
             if !armedNow && classified.vote == .maskOff {
                 // Sitting up and arranging tubing must not burn the upload pause.
@@ -699,7 +712,9 @@ final class GuardModel: ObservableObject {
                 started: started
             )
         } catch {
-            saveCircuit(CloudCircuitPolicy.onFailure(circuit, now: Date()))
+            if !isClassifyQuotaRefusal(error) {
+                saveCircuit(CloudCircuitPolicy.onFailure(circuit, now: Date()))
+            }
             throw error
         }
     }
@@ -907,9 +922,7 @@ final class GuardModel: ObservableObject {
             captureToJudgeMs: captureToJudgeMs,
             roundMs: roundMs
         )
-        let probe = cycleQuotaProbe
-        cycleQuotaProbe = false
-        recordRound(line, vote: classified.vote.rawValue, error: nil, http: nil, quotaProbe: probe)
+        recordRound(line, vote: classified.vote.rawValue, error: nil, http: nil)
         FrameArchive.save(ArchivePayload(
             capturedAt: capturedAt,
             result: result,
@@ -965,46 +978,21 @@ final class GuardModel: ObservableObject {
     }
 
     private func noteRoundError(_ error: Error) {
-        consecutiveFailures += 1
         let http = absorbRelayFailure(error)
-        let message = l10n.failureMessage(error)
-        let probe = cycleQuotaProbe
-        cycleQuotaProbe = false
-        let remainingEmpty = (http?.quota?.classifyRemaining ?? 1) <= 0 && http?.quota != nil
-        let quotaHit = http?.status == 429 || remainingEmpty
-        if quotaHit {
-            roundNote = nil
-            lastReadout = CaptureReadout(
-                capturedAt: Date(),
-                vote: nil,
-                raw: "",
-                alarmed: false,
-                unjudged: false,
-                inferMs: 0,
-                captureToJudgeMs: 0,
-                roundMs: 0,
-                gatewayLimited: true
-            )
-            let text = gatewayQuotaLine ?? l10n.gatewayLimitedReason
-            recordRound(
-                text,
-                vote: nil,
-                error: http?.errorCode ?? "quota_exhausted",
-                http: http?.status,
-                quotaProbe: probe,
-                sleepDay: http?.sleepDay
-            )
-        } else {
-            roundNote = message
-            recordRound(
-                message,
-                vote: nil,
-                error: cycleErrorCode(error, http: http),
-                http: http?.status,
-                quotaProbe: probe,
-                sleepDay: http?.sleepDay
-            )
+        if isClassifyQuotaRefusal(error) {
+            noteQuotaRetry(http)
+            return
         }
+        consecutiveFailures += 1
+        let message = l10n.failureMessage(error)
+        roundNote = message
+        recordRound(
+            message,
+            vote: nil,
+            error: cycleErrorCode(error, http: http),
+            http: http?.status,
+            sleepDay: http?.sleepDay
+        )
         health = HealthMath.score(
             captureToJudgeMs: nil,
             roundMs: nil,
@@ -1107,6 +1095,15 @@ final class GuardModel: ObservableObject {
         try? await UNUserNotificationCenter.current().add(request)
     }
 
+    private func postLongWearNotification(body: String) async {
+        let content = UNMutableNotificationContent()
+        content.title = l10n.longWearTitle
+        content.body = body
+        content.sound = .default
+        let request = UNNotificationRequest(identifier: "long-wear", content: content, trigger: nil)
+        try? await UNUserNotificationCenter.current().add(request)
+    }
+
     private func postLeftNotification() async {
         let content = UNMutableNotificationContent()
         content.title = l10n.notifyLeftTitle
@@ -1161,6 +1158,61 @@ final class GuardModel: ObservableObject {
         Task { await postGuardNotification(title: title, body: note) }
     }
 
+    /// Quota refusal keeps the loop alive: no circuit open, no guard-failed trip.
+    private func noteQuotaRetry(_ http: RelayHTTPError?) {
+        roundNote = nil
+        markJudgment(Date())
+        recordRound(
+            l10n.gatewayQuotaRetry,
+            vote: nil,
+            error: "quota_retry",
+            http: http?.status,
+            sleepDay: http?.sleepDay
+        )
+        maybeAudioOnlyAlarm()
+    }
+
+    private func isClassifyQuotaRefusal(_ error: Error) -> Bool {
+        guard let http = relayHTTP(error) else { return false }
+        if http.status == 429 { return true }
+        if let remaining = http.quota?.classifyRemaining, remaining <= 0 { return true }
+        return false
+    }
+
+    private func noteContinuousWear(_ vote: FrameVote, armed: Bool, at now: Date) {
+        let (next, effect) = ContinuousWearPolicy.observe(wearState, vote: vote, armed: armed, now: now)
+        wearState = next
+        if next.startedAt == nil {
+            longWearNote = nil
+        }
+        if case .remind(let worn) = effect {
+            deliverLongWearReminder(worn: worn)
+        }
+    }
+
+    private func resetContinuousWear() {
+        wearState = ContinuousWearState()
+        longWearNote = nil
+    }
+
+    private func deliverLongWearReminder(worn: TimeInterval) {
+        let hours = max(12, Int(worn / 3600))
+        let text = l10n.longWearReminder(hours: hours)
+        longWearNote = text
+        record(
+            text,
+            kind: "wear",
+            vote: FrameVote.maskOn.rawValue,
+            extras: [
+                "wear_seconds": Int(worn.rounded()),
+                "alert": "continuous_wear_12h",
+            ]
+        )
+        AudioServicesPlaySystemSound(kSystemSoundID_Vibrate)
+        AudioServicesPlaySystemSound(1007)
+        Task { await self.postLongWearNotification(body: text) }
+    }
+
     private func publishLocalOnly(payload: Data, capturedAt: Date, started: Date) {
         let roundMs = MonitorClock.milliseconds(since: started)
         lastReadout = CaptureReadout(
@@ -1212,29 +1264,6 @@ final class GuardModel: ObservableObject {
         markJudgment(capturedAt)
         recordRound(l10n.circuitLocal, vote: nil, error: "circuit_skip", http: nil)
         record(l10n.telemetry(prompt: -1, completion: -1))
-        maybeAudioOnlyAlarm()
-    }
-
-    /// Classify budget is empty. Logged without a JPEG. Resume quota is left alone.
-    private func publishGatewaySkip(payload: Data, capturedAt: Date, started: Date) {
-        let roundMs = MonitorClock.milliseconds(since: started)
-        lastReadout = CaptureReadout(
-            capturedAt: capturedAt,
-            vote: nil,
-            raw: "",
-            alarmed: false,
-            unjudged: false,
-            inferMs: 0,
-            captureToJudgeMs: roundMs,
-            roundMs: roundMs,
-            gatewayLimited: true
-        )
-        lastThumbnail = UIImage(data: payload)
-        roundNote = nil
-        consecutiveFailures = 0
-        markJudgment(capturedAt)
-        let text = gatewayQuotaLine ?? l10n.gatewayLimitedReason
-        recordRound(text, vote: nil, error: "quota_exhausted", http: nil)
         maybeAudioOnlyAlarm()
     }
 
@@ -1447,6 +1476,7 @@ final class GuardModel: ObservableObject {
         settleSecondsLeft = 0
         alarmArmed = false
         maskOnStreak = 0
+        resetContinuousWear()
     }
 
     private func applyTorch() async {
@@ -1500,27 +1530,6 @@ final class GuardModel: ObservableObject {
         }
     }
 
-    private enum GatewayGate {
-        case allow
-        case skip
-        case probe
-    }
-
-    private func gatewayGate(now: Date) -> GatewayGate {
-        guard gatewayExhaustedNow(now) else { return .allow }
-        if now.timeIntervalSince(lastGatewayProbe) >= GatewayQuotaPolicy.probeSpacing {
-            return .probe
-        }
-        return .skip
-    }
-
-    private func gatewayExhaustedNow(_ now: Date = Date()) -> Bool {
-        let today = CloudUploadPolicy.dayKey(now)
-        if GatewayQuotaStore.isBlocked(on: today) { return true }
-        guard let quota = gatewayQuota, quota.classifyRemaining <= 0 else { return false }
-        return quota.sleepDay.isEmpty || quota.sleepDay == today
-    }
-
     private func quotaForToday(_ now: Date = Date()) -> GatewayQuota? {
         let today = CloudUploadPolicy.dayKey(now)
         guard let quota = gatewayQuota else { return nil }
@@ -1544,11 +1553,14 @@ final class GuardModel: ObservableObject {
         let previous = gatewayQuota
         GatewayQuotaStore.save(copy)
         gatewayQuota = copy
+        relayClassifyCapped = copy.classifyRemaining <= 0
+        if copy.classifyRemaining > 0 {
+            loggedUnknownQuotaCap = false
+        }
         let sameDay = previous?.sleepDay == copy.sleepDay
         let becameEmpty = copy.classifyRemaining <= 0 && (!sameDay || (previous?.classifyRemaining ?? 1) > 0)
         if becameEmpty {
-            lastGatewayProbe = Date()
-            record(l10n.gatewayQuotaExhausted(copy), kind: "quota")
+            record(l10n.gatewayQuotaSoftEmpty(copy), kind: "quota")
         }
     }
 
@@ -1562,11 +1574,10 @@ final class GuardModel: ObservableObject {
             }
             rememberQuota(copy)
         } else if http.status == 429 {
-            let day = (http.sleepDay?.isEmpty == false) ? http.sleepDay! : CloudUploadPolicy.dayKey(Date())
-            if !GatewayQuotaStore.isBlocked(on: day) {
-                GatewayQuotaStore.markBlocked(day)
-                lastGatewayProbe = Date()
-                record(l10n.gatewayQuotaExhaustedUnknown, kind: "quota")
+            relayClassifyCapped = true
+            if !loggedUnknownQuotaCap {
+                loggedUnknownQuotaCap = true
+                record(l10n.gatewayQuotaSoftUnknown, kind: "quota")
             }
         }
         return http
@@ -1623,7 +1634,8 @@ final class GuardModel: ObservableObject {
         error: String?,
         httpStatus: Int?,
         quotaProbe: Bool,
-        sleepDay: String?
+        sleepDay: String?,
+        extras: [String: Any] = [:]
     ) {
         let now = Date()
         let circuit = loadCircuit()
@@ -1660,6 +1672,9 @@ final class GuardModel: ObservableObject {
         if let error, !error.isEmpty { object["error"] = error }
         if let httpStatus { object["http_status"] = httpStatus }
         if quotaProbe { object["quota_probe"] = true }
+        for (key, value) in extras {
+            object[key] = value
+        }
         if let note {
             let trimmed = note.trimmingCharacters(in: .whitespacesAndNewlines)
             if !trimmed.isEmpty {

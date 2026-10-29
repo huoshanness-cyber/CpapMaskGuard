@@ -232,8 +232,8 @@ struct L10n {
     }
     var logsDiskHint: String {
         language == .zh
-            ? "文件在 Application Support/MaskFrames/night-events.jsonl。失败、熔断、次数用完都会记，不靠最近 12 张样张。大约保留 48 小时或 8MB。"
-            : "File: Application Support/MaskFrames/night-events.jsonl. Failures, the circuit, and classify quota are logged there. The latest 12 photos are not the history. About 48 hours, or 8MB."
+            ? "文件在 Application Support/MaskFrames/night-events.jsonl。失败、熔断、识别次数到上限、连续佩戴满 12 小时都会记一行。不靠最近 12 张样张。大约保留 48 小时或 8MB。"
+            : "File: Application Support/MaskFrames/night-events.jsonl. Failures, the circuit, a classify limit, and the 12-hour wear reminder are logged there. The latest 12 photos are not the history. About 48 hours, or 8MB."
     }
     var logsDiskEmpty: String {
         language == .zh ? "还没有写到本机的夜间记录。" : "No overnight file yet."
@@ -543,28 +543,34 @@ struct L10n {
             ? "今晚的恢复次数已用完。继续本机听鼾兜底，不再上传画面。"
             : "No upload resumes left tonight. Snore detection continues on this phone, without sending photos."
     }
-    var gatewayLimitedResult: String {
-        language == .zh ? "云端识别次数已用完" : "Cloud classify quota used up"
+    var longWearTitle: String {
+        language == .zh ? "佩戴时间过长" : "Mask has been on a long time"
     }
-    var gatewayLimitedReason: String {
-        language == .zh
-            ? "这一轮没有上传。云端识别次数用完了，不是「恢复上传」的次数。守护还在。"
-            : "This round was not uploaded. The cloud classify quota is used up. That is not the upload-resume count. Guard stays on."
+    func longWearReminder(hours: Int) -> String {
+        let shown = max(12, hours)
+        return language == .zh
+            ? "佩戴时间过长。已连续检测到戴着面罩满 \(shown) 小时。请确认面罩是否还在脸上，或镜头、传感器是不是卡住了。这只是提醒，守护会继续监测。"
+            : "Mask-on has been detected for \(shown) hours straight. Check that the mask is really on, or that the camera or sensor is stuck. This is only a reminder. Guard keeps watching."
     }
-    func gatewayQuotaExhausted(_ quota: GatewayQuota) -> String {
+    var gatewayQuotaRetry: String {
         language == .zh
-            ? "今晚的云端识别次数已用完（已用 \(quota.classifyUsed)/\(quota.classifyLimit)）。这不是「今晚的恢复次数」。守护还在，暂时不再上传画面，中午重置。"
-            : "Cloud classify quota is used up tonight (\(quota.classifyUsed)/\(quota.classifyLimit)). This is not the upload-resume count. Guard stays on and skips uploads until noon."
+            ? "这一轮中转说识别次数到了上限，下一轮会再请求。守护仍在监测。"
+            : "The relay reported a classify limit on this round. The next round will ask again. Guard is still watching."
     }
-    var gatewayQuotaExhaustedUnknown: String {
+    func gatewayQuotaSoftEmpty(_ quota: GatewayQuota) -> String {
         language == .zh
-            ? "今晚的云端识别次数已用完（中转返回 429）。这不是「今晚的恢复次数」。守护还在，暂时不再上传画面。"
-            : "Cloud classify quota is used up tonight (relay HTTP 429). This is not the upload-resume count. Guard stays on and skips uploads."
+            ? "中转上报的识别次数已是 \(quota.classifyUsed)/\(quota.classifyLimit)。守护会继续请求识别。这和每晚的恢复上传次数不是一回事。"
+            : "The relay reports classify usage at \(quota.classifyUsed)/\(quota.classifyLimit). Guard keeps asking for a classification. That is separate from nightly upload resumes."
+    }
+    var gatewayQuotaSoftUnknown: String {
+        language == .zh
+            ? "中转返回了识别次数上限（HTTP 429）。守护会继续请求识别。"
+            : "The relay returned a classify limit (HTTP 429). Guard keeps asking for a classification."
     }
     func gatewayQuotaLow(_ quota: GatewayQuota) -> String {
         language == .zh
-            ? "云端识别还剩 \(quota.classifyRemaining) 次（已用 \(quota.classifyUsed)/\(quota.classifyLimit)）。用完会暂停上传。这和「今晚还可恢复上传」不是一回事。"
-            : "\(quota.classifyRemaining) cloud classify calls left tonight (\(quota.classifyUsed)/\(quota.classifyLimit)). Running out pauses uploads. That is separate from upload resumes."
+            ? "云端识别还剩 \(quota.classifyRemaining) 次（已用 \(quota.classifyUsed)/\(quota.classifyLimit)）。到了上限也会继续请求识别。这和每晚的恢复上传次数不是一回事。"
+            : "\(quota.classifyRemaining) cloud classify calls left (\(quota.classifyUsed)/\(quota.classifyLimit)). Hitting the limit still keeps requests going. That is separate from nightly upload resumes."
     }
     var circuitOpened: String {
         language == .zh ? "云端熔断已打开，接下来几分钟先不上传" : "Cloud circuit opened. Uploads pause for a few minutes."
@@ -619,7 +625,7 @@ struct L10n {
             : "\(streak) mask-off results in a row. Uploads stopped. The alarm continues. \(remaining) resumes left tonight."
     }
 
-    /// Marketing version and build from the bundle, for example `0.4.2 (9)`.
+    /// Marketing version and build from the bundle, for example `0.4.2 (10)`.
     var appVersionLabel: String {
         let info = Bundle.main.infoDictionary ?? [:]
         let version = (info["CFBundleShortVersionString"] as? String ?? "")

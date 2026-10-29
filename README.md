@@ -140,13 +140,17 @@ xcodebuild -project CpapMaskGuard.xcodeproj -scheme CpapMaskGuard \
 
 MiniMax key：把 `ios/CpapMaskGuard/Config/Secrets.xcconfig.example` 复制成同目录 `Secrets.xcconfig`（已 gitignore），填入 Key 后重新编译安装。Key 只出现在本机 Info.plist 的构建结果里，源码和日志都不写真 Key。
 
-真机：用 Xcode 打开工程，选已连接的 iPhone，Run。签名是 Automatic，Team `H45MTM24C4`。模拟器没有真手电筒，云端判定也需要真人和网络，床头测试请用真机，并保持 App 在前台、屏幕常亮。装上后本机状态应显示 **0.4.2 (9)**。
+真机：用 Xcode 打开工程，选已连接的 iPhone，Run。签名是 Automatic，Team `H45MTM24C4`。模拟器没有真手电筒，云端判定也需要真人和网络，床头测试请用真机，并保持 App 在前台、屏幕常亮。装上后本机状态应显示 **0.4.2 (10)**。
 
 ### Overnight log / 夜间记录怎么拿走
 
 iOS writes `Library/Application Support/MaskFrames/night-events.jsonl` inside the app container. Same folder as the 12 sample JPEGs. The file rolls at about 8MB, dropping lines older than 48 hours first, so one sleep-night stays. Lines include local ISO8601 time, sleep day, vote or error, HTTP status, circuit (`open` / `closed`, fails, open_until), upload on/off, resume used/remaining, and relay `classify_used` / `classify_remaining` / `classify_limit` when the response had `quota`. Circuit skips and network errors are lines even when no JPEG is saved.
 
-When classify remaining is low (about 5% or less) or 0, the home screen shows a Chinese line for **云端识别次数**. That is the relay budget (`quota` on `POST /v1/classify`). It is not 「今晚的恢复次数已用完」, which is still the 10 upload resumes.
+When classify remaining is low (about 5% or less), or the relay reports remaining 0 / HTTP 429, the home screen shows a line for **云端识别次数**. Guard keeps requesting classify on the normal interval. That budget does not pause detection. The line is not 「今晚的恢复次数已用完」, which is still the 10 upload resumes.
+
+The relay setting `CLASSIFY_PER_SLEEP_DAY` is not in this repo. Ops should turn that hard cap off, or set it high enough that one night of guarding cannot hit it. Until that ships, this client still keeps calling.
+
+After the one-minute lie-down, continuous `MASK_ON` time is tracked. That minute does not count. `UNCERTAIN` does not start or clear the timer (there is no uncertain-with-wear vote). `MASK_OFF`, `NO_PERSON`, or stopping guard clears it. At 12 hours the app shows one Chinese reminder, posts a notification, and appends a `kind: wear` line (with `alert: continuous_wear_12h` and `wear_seconds`) to `night-events.jsonl`. Guard keeps running. The reminder is once per continuous episode.
 
 Pull from a Mac with the phone unlocked and trusted:
 
@@ -164,15 +168,19 @@ xcrun devicectl device copy from \
   --destination ./night-events.jsonl
 ```
 
-Android on this branch already keeps a text log at `filesDir/logs/app.log` (about 768KB plus `app.log.1`). It does not write this JSON file. The Android cloud path here is still direct MiniMax; the relay client and its `quota` object are not on this branch, so the classify-quota banner is iOS-only.
+Android on this branch already keeps a text log at `filesDir/logs/app.log` (about 768KB plus `app.log.1`). It does not write this JSON file. The Android cloud path here is still direct MiniMax; the relay client and its `quota` object are not on this branch, and nothing there pauses classify when a quota hits 0. The classify-quota banner and the 12-hour wear reminder are iOS-only.
 
 iOS 写在应用容器的 `Library/Application Support/MaskFrames/night-events.jsonl`，和最多 12 张样张同一个目录。文件大约到 8MB 才滚动，先丢掉超过 48 小时的行，一整夜会留下。每行有本地 ISO8601 时间、睡眠日、判定或错误、HTTP 状态、熔断（open/closed、失败次数、open_until）、上传开关、恢复次数已用/剩余；中转响应里带了 `quota` 时还有 `classify_used` / `classify_remaining` / `classify_limit`。熔断跳过和网络失败即使没有 JPEG 也会记一行。
 
-云端识别还剩大约 5% 或已经是 0 时，主屏单独写「云端识别次数」。这是中转 `POST /v1/classify` 的 `quota`，不是「今晚的恢复次数已用完」（那仍是每晚 10 次恢复上传）。
+云端识别还剩大约 5%，或者中转报剩余 0 / HTTP 429 时，主屏写「云端识别次数」。守护会按原来的间隔继续请求识别，这个上限不会把检测停掉。这句不是「今晚的恢复次数已用完」（那仍是每晚 10 次恢复上传）。
+
+中转上的 `CLASSIFY_PER_SLEEP_DAY` 不在这个仓库里。运维需要关掉这个硬上限，或把它调到一整夜守护打不满。在那之前，客户端也会继续请求。
+
+躺好的那一分钟结束之后，才累计连续 `MASK_ON`。这一分钟不算进 12 小时。`UNCERTAIN` 既不开始也不清掉计时（没有「看不清但仍算佩戴」这种票）。`MASK_OFF`、`NO_PERSON`，或停止守护，会计时清零。满 12 小时提醒一次中文，发一条通知，并在 `night-events.jsonl` 追加 `kind: wear`（带 `alert: continuous_wear_12h` 和 `wear_seconds`）。守护不会因此停。同一次连续佩戴只提醒一次。
 
 从 Mac 拉文件：手机解锁并信任电脑。Xcode → Window → Devices and Simulators → 选中这台 iPhone → 已安装的 App → CpapMaskGuard → 齿轮 → Download Container。右键下载的 `.xcappdata` → 显示包内容 → `AppData/Library/Application Support/MaskFrames/night-events.jsonl`。上面的 `devicectl` 命令也可以。
 
-这条分支上的安卓已经把文字日志写在 `filesDir/logs/app.log`（大约 768KB，另留 `app.log.1`），没有这份 JSON。安卓云端仍直连 MiniMax，中转客户端和 `quota` 不在这条分支上，所以云端识别次数这行只做了 iOS。
+这条分支上的安卓已经把文字日志写在 `filesDir/logs/app.log`（大约 768KB，另留 `app.log.1`），没有这份 JSON。安卓云端仍直连 MiniMax，中转客户端和 `quota` 不在这条分支上，也没有「识别次数用尽就停检」的分支，所以云端识别次数和 12 小时佩戴提醒只做了 iOS。
 
 English: scheme `CpapMaskGuard`, Automatic signing, team `H45MTM24C4`. Build and `simctl install` / `simctl launch` as above when an iOS Simulator runtime is available. Device test: plug in an iPhone, select it, Run. Keep the app in the foreground. The API key comes only from local `Secrets.xcconfig`.
 
@@ -185,9 +193,11 @@ English: scheme `CpapMaskGuard`, Automatic signing, team `H45MTM24C4`. Build and
 - Ten cloud mask-off results in a row turn uploads off. The alarm keeps using the last mask-off result while resumes remain. Resume is limited to 10 times per Asia/Shanghai sleep day (noon). After that, the phone stays on the local classifier and snore detector.
 - Offline / no key, or a failed cloud call: inference stays on device when a local baseline exists.
 - After uploads stop, capture and the aim check continue, and the siren follows the last cloud mask-off result.
+- A relay classify budget of 0 or HTTP 429 does not stop classify while guard is on. The phone keeps asking. Disable `CLASSIFY_PER_SLEEP_DAY` on the relay; that service is not in this repo.
+- Twelve hours of continuous mask-on, counted after the lie-down minute, posts one reminder. Guard keeps running.
 - No account system in the app today.
 
-有云端 Key 时，只有明确全黑、全白或严重模糊的画面不会上传；拿不准会上传。连续 10 次云端脱落会停止上传。恢复主要靠「我戴好了」，画面连续明显变化也可以自动恢复一次。上海时间以中午 12:00 划分睡眠日，每晚最多 10 次恢复上传。这 10 次用尽后继续本机听鼾。中转另外还有云端识别次数（响应里的 quota），用完会单独提示，不是这 10 次。无 Key 或云端请求失败时，有本机基准就在本机判断。当前无账号体系。图片默认不捐赠。
+有云端 Key 时，只有明确全黑、全白或严重模糊的画面不会上传；拿不准会上传。连续 10 次云端脱落会停止上传。恢复主要靠「我戴好了」，画面连续明显变化也可以自动恢复一次。上海时间以中午 12:00 划分睡眠日，每晚最多 10 次恢复上传。这 10 次用尽后继续本机听鼾。中转另外上报云端识别次数（响应里的 quota）。剩余变少、变成 0，或 HTTP 429，都只提示，守护中的识别循环继续。这不是那 10 次恢复上传。服务端不应再把 `CLASSIFY_PER_SLEEP_DAY` 设成一夜会打满的硬上限。无 Key 或云端请求失败时，有本机基准就在本机判断。当前无账号体系。图片默认不捐赠。连续佩戴满 12 小时会提醒一次，不停止守护。
 
 ---
 
