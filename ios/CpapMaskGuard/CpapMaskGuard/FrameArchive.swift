@@ -22,8 +22,23 @@ struct ArchiveItem: Identifiable {
     let jpeg: Data?
 }
 
+/// Application Support folder shared by stills and the overnight event log.
+enum LocalArchive {
+    static let folderName = "MaskFrames"
+
+    /// `Library/Application Support/MaskFrames` inside the app container.
+    static func maskFramesURL() -> URL? {
+        FileManager.default
+            .urls(for: .applicationSupportDirectory, in: .userDomainMask)
+            .first?
+            .appendingPathComponent(folderName, isDirectory: true)
+    }
+}
+
 /// Last few stills plus a small JSON sidecar. Local only. Never stores the API key.
 /// Write failures are swallowed so a full disk cannot take down the monitor.
+/// This is image history only (`keep` successful frames). Overnight events go to
+/// `night-events.jsonl` in the same folder, including failures that have no JPEG.
 enum FrameArchive {
     private static let keep = 12
 
@@ -97,10 +112,7 @@ enum FrameArchive {
     }
 
     private static func folderURL() -> URL? {
-        FileManager.default
-            .urls(for: .applicationSupportDirectory, in: .userDomainMask)
-            .first?
-            .appendingPathComponent("MaskFrames", isDirectory: true)
+        LocalArchive.maskFramesURL()
     }
 
     private static func fileStem(_ date: Date) -> String {

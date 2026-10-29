@@ -23,6 +23,8 @@
 		4C1A0004A1B2C3D4E5F60721 /* FrameCapture.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4C1A0004A1B2C3D4E5F60711 /* FrameCapture.swift */; };
 		4C1A0005A1B2C3D4E5F60721 /* NightAudio.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4C1A0005A1B2C3D4E5F60711 /* NightAudio.swift */; };
 		4C1A0006A1B2C3D4E5F60721 /* FrameArchive.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4C1A0006A1B2C3D4E5F60711 /* FrameArchive.swift */; };
+		4C1A0008A1B2C3D4E5F60721 /* NightEventLog.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4C1A0008A1B2C3D4E5F60711 /* NightEventLog.swift */; };
+		4C1A0009A1B2C3D4E5F60721 /* GatewayQuota.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4C1A0009A1B2C3D4E5F60711 /* GatewayQuota.swift */; };
 		B8B246EF09F655F093CB404C /* SettingsPanel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 15CC62817618B16513F2C3D5 /* SettingsPanel.swift */; };
 		BF1294F354B28F409E77CC2C /* RearTorch.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6A08A01C3211E141ED38B87C /* RearTorch.swift */; };
 /* End PBXBuildFile section */
@@ -59,6 +61,8 @@
 		4C1A0004A1B2C3D4E5F60711 /* FrameCapture.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FrameCapture.swift; sourceTree = "<group>"; };
 		4C1A0005A1B2C3D4E5F60711 /* NightAudio.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NightAudio.swift; sourceTree = "<group>"; };
 		4C1A0006A1B2C3D4E5F60711 /* FrameArchive.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FrameArchive.swift; sourceTree = "<group>"; };
+		4C1A0008A1B2C3D4E5F60711 /* NightEventLog.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NightEventLog.swift; sourceTree = "<group>"; };
+		4C1A0009A1B2C3D4E5F60711 /* GatewayQuota.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GatewayQuota.swift; sourceTree = "<group>"; };
 		F89BD5DF246AFEE121BCD79C /* Release.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Release.xcconfig; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
@@ -99,6 +103,8 @@
 				D9F5E2D0D2BA8D5674ACB935 /* GuardModel.swift */,
 				4C1A0003A1B2C3D4E5F60711 /* ImageEncode.swift */,
 				4C1A0006A1B2C3D4E5F60711 /* FrameArchive.swift */,
+				4C1A0009A1B2C3D4E5F60711 /* GatewayQuota.swift */,
+				4C1A0008A1B2C3D4E5F60711 /* NightEventLog.swift */,
 				4C1A0004A1B2C3D4E5F60711 /* FrameCapture.swift */,
 				4C1A0002A1B2C3D4E5F60711 /* MiniMaxClient.swift */,
 				4C1A0007A1B2C3D4E5F60711 /* CpapRelayClient.swift */,
@@ -236,6 +242,8 @@
 				4C1A0004A1B2C3D4E5F60721 /* FrameCapture.swift in Sources */,
 				4C1A0005A1B2C3D4E5F60721 /* NightAudio.swift in Sources */,
 				4C1A0006A1B2C3D4E5F60721 /* FrameArchive.swift in Sources */,
+				4C1A0009A1B2C3D4E5F60721 /* GatewayQuota.swift in Sources */,
+				4C1A0008A1B2C3D4E5F60721 /* NightEventLog.swift in Sources */,
 				5637D8326A013390202699AD /* L10n.swift in Sources */,
 				173ED01886488B4343743207 /* SettingsPages.swift in Sources */,
 				BF1294F354B28F409E77CC2C /* RearTorch.swift in Sources */,
@@ -427,7 +435,7 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 8;
+				CURRENT_PROJECT_VERSION = 9;
 				DEVELOPMENT_TEAM = H45MTM24C4;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = NO;
@@ -453,7 +461,7 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 8;
+				CURRENT_PROJECT_VERSION = 9;
 				DEVELOPMENT_TEAM = H45MTM24C4;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = NO;

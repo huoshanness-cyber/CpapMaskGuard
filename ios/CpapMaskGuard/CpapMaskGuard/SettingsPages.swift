@@ -224,9 +224,10 @@ private struct BaselinePhotosPage: View {
     }
 }
 
-/// In-memory session notes. Nothing is read from a file path.
+/// This launch stays in memory. The overnight file is read when the page opens.
 private struct SessionLogPage: View {
     @ObservedObject var model: GuardModel
+    @State private var disk: [NightEventSummary] = []
 
     var body: some View {
         SettingsPageChrome(title: model.l10n.logsTitle, footnote: model.l10n.foregroundLimit) {
@@ -254,6 +255,37 @@ private struct SessionLogPage: View {
                     }
                 }
             }
+            Text(model.l10n.logsDiskTitle)
+                .font(.headline)
+                .foregroundStyle(GuardTheme.text)
+                .padding(.top, 8)
+            Text(model.l10n.logsDiskHint)
+                .font(.footnote)
+                .foregroundStyle(GuardTheme.muted)
+                .fixedSize(horizontal: false, vertical: true)
+            if disk.isEmpty {
+                Text(model.l10n.logsDiskEmpty)
+                    .font(.body)
+                    .foregroundStyle(GuardTheme.muted)
+            } else {
+                VStack(alignment: .leading, spacing: 12) {
+                    ForEach(disk) { line in
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(line.time)
+                                .font(.caption.monospacedDigit())
+                                .foregroundStyle(GuardTheme.muted)
+                            Text(line.text)
+                                .font(.body)
+                                .foregroundStyle(GuardTheme.text)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                }
+            }
+        }
+        .onAppear {
+            disk = NightEventLog.recentSummaries()
         }
     }
 }

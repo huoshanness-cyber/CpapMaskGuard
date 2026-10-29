@@ -16,6 +16,8 @@ struct CloudClassification: Equatable {
     var raw: String
     var promptTokens: Int = -1
     var completionTokens: Int = -1
+    var quota: GatewayQuota? = nil
+    var sleepDay: String? = nil
 }
 
 enum LabelParser {

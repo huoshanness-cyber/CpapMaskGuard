@@ -223,6 +223,10 @@ struct RootView: View {
 
     @ViewBuilder
     private var notices: some View {
+        if let line = model.gatewayQuotaLine {
+            notice(line)
+                .accessibilityIdentifier("home.gatewayQuota")
+        }
         if let note = model.permissionNote {
             notice(note)
         }

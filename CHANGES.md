@@ -1,3 +1,13 @@
+# 0.4.2 build 9 · 夜间事件日志，云端识别次数分开显示
+
+iOS **0.4.2**（build 9）。安卓 versionCode 仍是 22。
+
+真机 0.4.2（8）一夜把中转睡眠日上限 `quota.classify_*` 打满（当时 limit 1200，05:59 剩余 0）。应用里的「恢复上传」仍是 0/10。屏幕没有把这两件套配额分开，样张只留最近 12 张成功帧，内存日志杀掉就没了，夜里发生了什么对不上。
+
+- 同一目录 Application Support `MaskFrames/night-events.jsonl` 追加 JSON 行：每一轮监测、守护开关、相机会话中断/恢复、熔断开合、上传暂停/恢复、429 或剩余 0。失败和熔断不写 JPEG 也会记。大约保留 48 小时，文件超过约 8MB 时先丢掉更旧的行。
+- 解析中转 `quota.classify_used` / `classify_limit` / `classify_remaining`（也认 `quota` 里的 used/limit/remaining），记下上次的值。剩余约 5% 或为 0 时，主屏用「云端识别次数」这句，不用「今晚的恢复次数已用完」。
+- 样张仍只留最近 12 张。安卓这条分支没有中转响应，不接这行文案；安卓文字日志本来就在 `filesDir/logs/app.log`。
+
 # 0.4.2 build 8 · 侧睡单帧不响
 
 iOS **0.4.2**（build 8）。安卓连续确认和看图提示词一起改了，versionCode 仍是 22。

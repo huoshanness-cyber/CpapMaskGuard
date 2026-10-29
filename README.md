@@ -80,7 +80,7 @@
 ### iOS foreground monitor / 亮屏前台监测
 
 Project / 工程：`ios/CpapMaskGuard/CpapMaskGuard.xcodeproj`  
-Target device / 目标机：iPhone, including iPhone 17 Pro Max. Portrait only. Marketing version **0.4.2** (build 8). 监测和样张从视频流取帧，国行不再响快门声。
+Target device / 目标机：iPhone, including iPhone 17 Pro Max. Portrait only. Marketing version **0.4.2** (build 9). 监测和样张从视频流取帧，国行不再响快门声。
 
 iOS **cannot** keep the camera on in the true background. The home screen says so. Lock the screen or switch apps and capture, the siren, and the fill light all stop. There is no「使用前检查本机」and no burn-in page.
 
@@ -95,7 +95,7 @@ iOS **不能**在真正的后台开着相机。主屏写明了这一点。锁屏
 5. The home card shows **capture time**, **result** (`面罩正常` / `面罩脱落` / `未检测到人` / `不确定`), and **latency** (judge / capture-to-judge / round). Two consecutive `MASK_OFF` frames start the siren. One `MASK_OFF` does not. `NO_PERSON` does not. The siren loops until you tap **停止铃声**; guarding continues, with a 2 second quiet period. **停止守护** stops the camera, the light, and the sound.
 6. If the microphone is allowed, a local RMS / low-frequency / zero-cross heuristic can confirm snoring and alarm on its own (about 6s, or 12s when the camera just said the mask is on). Snore never blocks the camera. If the mic fails, capture continues.
 7. The siren uses media playback, so the silent switch does not mute it, but a low side-button volume still does. The app cannot force the hardware volume. Raise it before sleep. Vibration and a notification are the backup.
-8. Settings → 本机状态 / 拍几张戴着面罩的样子 / 查看日志 stay on the navigation stack (the 0.3.8 crash fix). Status is read-only plus a health score that **does not** stop the guard. Sample frames (latest 12 JPEG + JSON) live under Application Support `MaskFrames` and are not uploaded as files. The log list is memory-only for this launch.
+8. Settings → 本机状态 / 拍几张戴着面罩的样子 / 查看日志 stay on the navigation stack (the 0.3.8 crash fix). Status is read-only plus a health score that **does not** stop the guard. Sample frames (latest 12 JPEG + JSON) live under Application Support `MaskFrames` and are not uploaded as files. The on-screen list is this launch only. The overnight file is `MaskFrames/night-events.jsonl` in that same folder (one JSON line per cycle, including failures and the circuit). It is not uploaded.
 
 1. 把手机摆到能看见枕头的位置。前摄模式让**屏幕**朝向枕头（整屏白、亮度滑条）。后摄模式让**后摄**朝向枕头，默认用你自己的灯；手电筒可选，默认关，滑条走 `setTorchModeOn(level:)`。
 2. 把 `ios/CpapMaskGuard/Config/Secrets.xcconfig.example` 复制成同目录 `Secrets.xcconfig`（已 gitignore），写上 `MINIMAX_API_KEY`。运行时从 Info.plist 读取。**不要把真 Key 提交进 git。** 没有 Key 时照片不会上传，云端也不能判定。
@@ -104,7 +104,7 @@ iOS **不能**在真正的后台开着相机。主屏写明了这一点。锁屏
 5. 主屏显示**拍摄时间**、**结果**（面罩正常 / 面罩脱落 / 未检测到人 / 不确定）和**耗时**（判定 / 拍到判定 / 整轮）。连续两帧 `MASK_OFF` 才响铃。单独一帧不响。`NO_PERSON` 不响。铃声要自己点 **停止铃声** 才停，守护继续，并安静约 2 秒。**停止守护**会关掉相机、补光和铃声。
 6. 允许麦克风后，本机用响度、低频和过零率听鼾，确认打呼后可以单独响铃（相机没说「戴着」时约 6 秒，刚判成戴着时约 12 秒）。听鼾不挡住拍照。麦克风失败时仍然只看相机。
 7. 铃声走媒体播放，静音拨片不会把它关掉，但侧边音量很低就会听不见。应用不能强行把系统音量拉满。睡前请把音量调大。震动和通知是辅助。
-8. 设置里的本机状态、拍几张戴着面罩的样子、查看日志仍走导航栈（0.3.8 的闪退修复还在）。本机状态只读，外加一个**不会因此停守护**的健康分。样张最多留 12 张 JPEG 和 JSON，在 Application Support 的 `MaskFrames`，这些文件本身不上传。日志只在这一次打开的内存里。
+8. 设置里的本机状态、拍几张戴着面罩的样子、查看日志仍走导航栈（0.3.8 的闪退修复还在）。本机状态只读，外加一个**不会因此停守护**的健康分。样张最多留 12 张 JPEG 和 JSON，在 Application Support 的 `MaskFrames`，这些文件本身不上传。屏幕上的日志是这一次打开的内存。夜间记录是同一目录里的 `night-events.jsonl`（每一轮一行 JSON，失败和熔断也写），不上传。
 
 Scheme：`CpapMaskGuard`。Bundle id：`app.cpapmaskguard`。签名已写在工程里：**Automatically manage signing**，Team **敏敏 史 (Personal Team)** `H45MTM24C4`。模拟器实际用 ad-hoc 签名，不需要真机 UDID。
 
@@ -140,7 +140,39 @@ xcodebuild -project CpapMaskGuard.xcodeproj -scheme CpapMaskGuard \
 
 MiniMax key：把 `ios/CpapMaskGuard/Config/Secrets.xcconfig.example` 复制成同目录 `Secrets.xcconfig`（已 gitignore），填入 Key 后重新编译安装。Key 只出现在本机 Info.plist 的构建结果里，源码和日志都不写真 Key。
 
-真机：用 Xcode 打开工程，选已连接的 iPhone，Run。签名是 Automatic，Team `H45MTM24C4`。模拟器没有真手电筒，云端判定也需要真人和网络，床头测试请用真机，并保持 App 在前台、屏幕常亮。
+真机：用 Xcode 打开工程，选已连接的 iPhone，Run。签名是 Automatic，Team `H45MTM24C4`。模拟器没有真手电筒，云端判定也需要真人和网络，床头测试请用真机，并保持 App 在前台、屏幕常亮。装上后本机状态应显示 **0.4.2 (9)**。
+
+### Overnight log / 夜间记录怎么拿走
+
+iOS writes `Library/Application Support/MaskFrames/night-events.jsonl` inside the app container. Same folder as the 12 sample JPEGs. The file rolls at about 8MB, dropping lines older than 48 hours first, so one sleep-night stays. Lines include local ISO8601 time, sleep day, vote or error, HTTP status, circuit (`open` / `closed`, fails, open_until), upload on/off, resume used/remaining, and relay `classify_used` / `classify_remaining` / `classify_limit` when the response had `quota`. Circuit skips and network errors are lines even when no JPEG is saved.
+
+When classify remaining is low (about 5% or less) or 0, the home screen shows a Chinese line for **云端识别次数**. That is the relay budget (`quota` on `POST /v1/classify`). It is not 「今晚的恢复次数已用完」, which is still the 10 upload resumes.
+
+Pull from a Mac with the phone unlocked and trusted:
+
+1. Xcode → Window → Devices and Simulators → select the iPhone → Installed Apps → CpapMaskGuard → gear → Download Container.
+2. Right-click the saved `.xcappdata` → Show Package Contents → `AppData/Library/Application Support/MaskFrames/night-events.jsonl`.
+
+Or, with a recent Xcode:
+
+```bash
+xcrun devicectl device copy from \
+  --device <UDID> \
+  --domain-type appDataContainer \
+  --domain-identifier app.cpapmaskguard \
+  --source 'Library/Application Support/MaskFrames/night-events.jsonl' \
+  --destination ./night-events.jsonl
+```
+
+Android on this branch already keeps a text log at `filesDir/logs/app.log` (about 768KB plus `app.log.1`). It does not write this JSON file. The Android cloud path here is still direct MiniMax; the relay client and its `quota` object are not on this branch, so the classify-quota banner is iOS-only.
+
+iOS 写在应用容器的 `Library/Application Support/MaskFrames/night-events.jsonl`，和最多 12 张样张同一个目录。文件大约到 8MB 才滚动，先丢掉超过 48 小时的行，一整夜会留下。每行有本地 ISO8601 时间、睡眠日、判定或错误、HTTP 状态、熔断（open/closed、失败次数、open_until）、上传开关、恢复次数已用/剩余；中转响应里带了 `quota` 时还有 `classify_used` / `classify_remaining` / `classify_limit`。熔断跳过和网络失败即使没有 JPEG 也会记一行。
+
+云端识别还剩大约 5% 或已经是 0 时，主屏单独写「云端识别次数」。这是中转 `POST /v1/classify` 的 `quota`，不是「今晚的恢复次数已用完」（那仍是每晚 10 次恢复上传）。
+
+从 Mac 拉文件：手机解锁并信任电脑。Xcode → Window → Devices and Simulators → 选中这台 iPhone → 已安装的 App → CpapMaskGuard → 齿轮 → Download Container。右键下载的 `.xcappdata` → 显示包内容 → `AppData/Library/Application Support/MaskFrames/night-events.jsonl`。上面的 `devicectl` 命令也可以。
+
+这条分支上的安卓已经把文字日志写在 `filesDir/logs/app.log`（大约 768KB，另留 `app.log.1`），没有这份 JSON。安卓云端仍直连 MiniMax，中转客户端和 `quota` 不在这条分支上，所以云端识别次数这行只做了 iOS。
 
 English: scheme `CpapMaskGuard`, Automatic signing, team `H45MTM24C4`. Build and `simctl install` / `simctl launch` as above when an iOS Simulator runtime is available. Device test: plug in an iPhone, select it, Run. Keep the app in the foreground. The API key comes only from local `Secrets.xcconfig`.
 
@@ -155,7 +187,7 @@ English: scheme `CpapMaskGuard`, Automatic signing, team `H45MTM24C4`. Build and
 - After uploads stop, capture and the aim check continue, and the siren follows the last cloud mask-off result.
 - No account system in the app today.
 
-有云端 Key 时，只有明确全黑、全白或严重模糊的画面不会上传；拿不准会上传。连续 10 次云端脱落会停止上传。恢复主要靠「我戴好了」，画面连续明显变化也可以自动恢复一次。上海时间以中午 12:00 划分睡眠日，每晚最多 10 次。次数用尽后继续本机兜底和听鼾。无 Key 或云端请求失败时，有本机基准就在本机判断。当前无账号体系。图片默认不捐赠。
+有云端 Key 时，只有明确全黑、全白或严重模糊的画面不会上传；拿不准会上传。连续 10 次云端脱落会停止上传。恢复主要靠「我戴好了」，画面连续明显变化也可以自动恢复一次。上海时间以中午 12:00 划分睡眠日，每晚最多 10 次恢复上传。这 10 次用尽后继续本机听鼾。中转另外还有云端识别次数（响应里的 quota），用完会单独提示，不是这 10 次。无 Key 或云端请求失败时，有本机基准就在本机判断。当前无账号体系。图片默认不捐赠。
 
 ---
 

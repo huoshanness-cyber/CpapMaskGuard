@@ -40,6 +40,10 @@ final class FrameCapture: NSObject, @unchecked Sendable {
     private var position: AVCaptureDevice.Position?
     private var wantTorch = false
     private var torchLevel: Float = 0
+    private let noteLock = NSLock()
+    private var sessionTokens: [NSObjectProtocol] = []
+    private var suppressSessionNotes = false
+    private var onSessionNote: ((String) -> Void)?
 
     /// Touched only on `videoQueue`.
     private var acceptingFrames = false
@@ -53,9 +57,18 @@ final class FrameCapture: NSObject, @unchecked Sendable {
         previewLayer.videoGravity = .resizeAspectFill
         previewLayer.session = session
         sink.owner = self
+        installSessionObservers()
+    }
+
+    /// `interrupted:<name>:<code>`, `resumed`, or `runtime:<domain> <code>`.
+    func setSessionHandler(_ handler: ((String) -> Void)?) {
+        noteLock.lock()
+        onSessionNote = handler
+        noteLock.unlock()
     }
 
     deinit {
+        sessionTokens.forEach { NotificationCenter.default.removeObserver($0) }
         sink.owner = nil
         let output = video
         let runningSession = session
@@ -119,6 +132,7 @@ final class FrameCapture: NSObject, @unchecked Sendable {
     func stop() async {
         await withCheckedContinuation { continuation in
             queue.async {
+                self.setSuppressSessionNotes(true)
                 self.video.setSampleBufferDelegate(nil, queue: nil)
                 self.quiesceVideoQueue()
                 self.turnTorchOffOnQueue()
@@ -152,6 +166,8 @@ final class FrameCapture: NSObject, @unchecked Sendable {
         if self.position == position, session.isRunning {
             return setTorchOnQueue(enabled: torchEnabled, level: level)
         }
+        setSuppressSessionNotes(true)
+        defer { setSuppressSessionNotes(false) }
         video.setSampleBufferDelegate(nil, queue: nil)
         quiesceVideoQueue()
         if session.isRunning {
@@ -202,6 +218,7 @@ final class FrameCapture: NSObject, @unchecked Sendable {
         tune(camera)
         video.setSampleBufferDelegate(sink, queue: videoQueue)
         session.startRunning()
+        setSuppressSessionNotes(false)
         guard session.isRunning else {
             video.setSampleBufferDelegate(nil, queue: nil)
             throw CaptureError.notRunning
@@ -387,6 +404,68 @@ final class FrameCapture: NSObject, @unchecked Sendable {
         for waiter in pending {
             waiter.once.resume(waiter.continuation, result)
         }
+    }
+
+    private func installSessionObservers() {
+        let center = NotificationCenter.default
+        var tokens: [NSObjectProtocol] = []
+        tokens.append(center.addObserver(forName: .AVCaptureSessionWasInterrupted, object: session, queue: nil) { [weak self] note in
+            guard let self else { return }
+            self.emitInterrupt(note)
+        })
+        tokens.append(center.addObserver(forName: .AVCaptureSessionInterruptionEnded, object: session, queue: nil) { [weak self] _ in
+            guard let self else { return }
+            self.emit("resumed")
+        })
+        tokens.append(center.addObserver(forName: .AVCaptureSessionRuntimeError, object: session, queue: nil) { [weak self] note in
+            guard let self else { return }
+            self.emitRuntime(note)
+        })
+        noteLock.lock()
+        sessionTokens = tokens
+        noteLock.unlock()
+    }
+
+    private func emitInterrupt(_ note: Notification) {
+        let raw = (note.userInfo?[AVCaptureSessionInterruptionReasonKey] as? NSNumber)?.intValue ?? -1
+        // AVCaptureSession.InterruptionReason raw values.
+        let name: String
+        switch raw {
+        case 1: name = "background"
+        case 2: name = "audio_in_use"
+        case 3: name = "video_in_use"
+        case 4: name = "multiple_foreground_apps"
+        case 5: name = "system_pressure"
+        case 6: name = "sensitive_content"
+        default: name = "unknown"
+        }
+        emit("interrupted:\(name):\(raw)")
+    }
+
+    private func emitRuntime(_ note: Notification) {
+        let error = note.userInfo?[AVCaptureSessionErrorKey] as? NSError
+        let text = error.map { "\($0.domain) \($0.code)" } ?? "unknown"
+        emit("runtime:\(text)")
+    }
+
+    private func emit(_ raw: String) {
+        if sessionNotesSuppressed() { return }
+        noteLock.lock()
+        let handler = onSessionNote
+        noteLock.unlock()
+        handler?(raw)
+    }
+
+    private func sessionNotesSuppressed() -> Bool {
+        noteLock.lock()
+        defer { noteLock.unlock() }
+        return suppressSessionNotes
+    }
+
+    private func setSuppressSessionNotes(_ value: Bool) {
+        noteLock.lock()
+        suppressSessionNotes = value
+        noteLock.unlock()
     }
 
     private func timeout(_ waiter: FrameWaiter) {
