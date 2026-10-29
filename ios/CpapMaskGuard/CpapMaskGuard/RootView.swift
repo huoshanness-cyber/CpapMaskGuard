@@ -13,6 +13,10 @@ struct RootView: View {
                 background.ignoresSafeArea()
                 ScrollView {
                     VStack(alignment: .leading, spacing: 18) {
+                        if let line = model.longWearNote {
+                            notice(line)
+                                .accessibilityIdentifier("home.longWear")
+                        }
                         header
                         statusBlock
                         aimWindow
@@ -179,6 +183,12 @@ struct RootView: View {
                             .foregroundStyle(foregroundMuted)
                             .fixedSize(horizontal: false, vertical: true)
                     }
+                } else if model.relayClassifyCapped {
+                    Text(model.l10n.gatewayQuotaRetry)
+                        .font(.body)
+                        .foregroundStyle(foregroundText)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .accessibilityIdentifier("home.classifyRetry")
                 } else {
                     Text(model.l10n.takingFirst)
                         .font(.body)

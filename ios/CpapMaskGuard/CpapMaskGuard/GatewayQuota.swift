@@ -27,14 +27,12 @@ struct GatewayBodyMeta: Equatable {
 }
 
 enum GatewayQuotaPolicy {
-    /// Show a warning while 5% or less of the sleep-day budget is left.
+    /// Soft warning while 5% or less of the reported budget remains.
+    /// A remaining of 0 does not stop classify while guard is on. The loop keeps calling.
     static func isLow(_ quota: GatewayQuota) -> Bool {
         guard quota.classifyRemaining > 0, quota.classifyLimit > 0 else { return false }
         return quota.classifyRemaining * 20 <= quota.classifyLimit
     }
-
-    /// One classify attempt after the budget reads empty, so a same-night server raise is visible.
-    static let probeSpacing: TimeInterval = 15 * 60
 }
 
 enum GatewayQuotaParsing {
@@ -99,10 +97,12 @@ enum GatewayQuotaStore {
     private static let limitKey = "gateway_classify_limit"
     private static let remainingKey = "gateway_classify_remaining"
     private static let dayKey = "gateway_classify_sleep_day"
-    private static let blockedKey = "gateway_classify_blocked_day"
+    /// Older builds stored the sleep day here and skipped classify until noon.
+    private static let legacyBlockedKey = "gateway_classify_blocked_day"
 
     static func load() -> GatewayQuota? {
         let defaults = UserDefaults.standard
+        defaults.removeObject(forKey: legacyBlockedKey)
         guard defaults.object(forKey: usedKey) != nil,
               defaults.object(forKey: limitKey) != nil,
               defaults.object(forKey: remainingKey) != nil
@@ -121,21 +121,6 @@ enum GatewayQuotaStore {
         defaults.set(quota.classifyLimit, forKey: limitKey)
         defaults.set(quota.classifyRemaining, forKey: remainingKey)
         defaults.set(quota.sleepDay, forKey: dayKey)
-        if quota.classifyRemaining <= 0, !quota.sleepDay.isEmpty {
-            defaults.set(quota.sleepDay, forKey: blockedKey)
-        } else {
-            defaults.removeObject(forKey: blockedKey)
-        }
-    }
-
-    static func markBlocked(_ sleepDay: String) {
-        let day = sleepDay.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !day.isEmpty else { return }
-        UserDefaults.standard.set(day, forKey: blockedKey)
-    }
-
-    static func isBlocked(on sleepDay: String) -> Bool {
-        guard !sleepDay.isEmpty else { return false }
-        return UserDefaults.standard.string(forKey: blockedKey) == sleepDay
+        defaults.removeObject(forKey: legacyBlockedKey)
     }
 }
