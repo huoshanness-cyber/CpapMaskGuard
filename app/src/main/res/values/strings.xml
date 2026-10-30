@@ -18,7 +18,7 @@
     <string name="upload_paused_detail">连续看到面罩脱落，已停止上传。守护还在，铃声仍按上次结果。戴好了就点「我戴好了」。</string>
     <string name="resume_upload">我戴好了</string>
     <string name="resume_remaining">今晚还可恢复上传 %1$d 次（中午重置）</string>
-    <string name="resume_exhausted">今晚的恢复次数已用完。继续本机判断和听鼾，不再上传画面。</string>
+    <string name="resume_exhausted">今晚的恢复次数已用完。不再上传画面。听鼾报警已关闭。</string>
     <string name="resume_accepted">已恢复上传，今晚还可恢复 %1$d 次</string>
     <string name="resume_already">上传本来就是开着的</string>
     <string name="alarm_detail">请先戴回面罩，再点停止提醒。守护会继续。</string>
@@ -103,6 +103,11 @@
 
     <string name="preview_log_empty">抓拍日志会显示在这里（时间 + 结果）</string>
     <string name="preview_result_waiting">等待检测…</string>
+    <string name="monitor_next_shot">下一张 %1$d 秒</string>
+    <string name="monitor_next_soon">即将拍摄</string>
+    <string name="monitor_waiting_first">拍摄时间：还没有</string>
+    <string name="monitor_capture_time">拍摄时间：%1$s</string>
+    <string name="monitor_last_frame_desc">上一张监测照片</string>
 
     <string name="fill_mode_front_screen">前摄 + 屏幕补光（推荐）</string>
     <string name="fill_mode_rear_ambient">后摄 + 自备光源</string>

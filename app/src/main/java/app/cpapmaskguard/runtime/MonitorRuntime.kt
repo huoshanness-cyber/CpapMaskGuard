@@ -32,6 +32,13 @@ data class MonitorSnapshot(
      * 界面用它每秒刷新「还剩 Xs」，不依赖抓拍间隔。
      */
     val settleUntilElapsed: Long = 0L,
+    /**
+     * 下一轮开拍的墙钟时间。0 表示当前没有倒计时。
+     * 界面用它每秒刷新「下一张 N 秒」。
+     */
+    val nextShotEpochMs: Long = 0L,
+    /** 这一轮的判断过程：正在拍摄 / 上传中 / 上传成功，等待结果 / 结果或失败原因。 */
+    val judgePhase: String? = null,
 )
 
 /**

@@ -161,6 +161,7 @@ class MaskDetector(
         holdMaskOffAlarm: Boolean = false,
         localFallback: Boolean = false,
         circuit: CloudCircuit.State = CloudCircuit.State(),
+        onPhase: ((String) -> Unit)? = null,
     ): FrameDecision {
         val bitmap = BitmapDecode.decode(file, ImageLimits.DECODE_MAX_SIDE)
         return try {
@@ -175,6 +176,7 @@ class MaskDetector(
                     holdMaskOffAlarm = holdMaskOffAlarm,
                     localFallback = localFallback,
                     circuit = circuit,
+                    onPhase = onPhase,
                 )
             }
         } finally {
@@ -209,6 +211,7 @@ class MaskDetector(
         holdMaskOffAlarm: Boolean,
         localFallback: Boolean,
         circuit: CloudCircuit.State,
+        onPhase: ((String) -> Unit)? = null,
     ): FrameDecision {
         if (mode != Mode.READY) {
             val summary = if (mode == Mode.SKIPPED) {
@@ -291,7 +294,10 @@ class MaskDetector(
                 }
                 try {
                     val jpegBytes = jpegForCloud(bitmap, jpegFile)
-                    val cloudResult = cloud.classify(jpegBytes)
+                    onPhase?.invoke("上传中")
+                    val cloudResult = cloud.classify(jpegBytes) {
+                        onPhase?.invoke("上传成功，等待结果")
+                    }
                     val inferMs = SystemClock.elapsedRealtime() - started
                     val comparison = Comparison(
                         vote = cloudResult.vote,

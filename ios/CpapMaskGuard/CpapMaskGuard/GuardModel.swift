@@ -5,6 +5,15 @@ import os
 import UIKit
 import UserNotifications
 
+enum JudgePhase: Equatable {
+    case idle
+    case capturing
+    case uploading
+    case waitingResult
+    case result(String)
+    case failed(String)
+}
+
 struct CaptureReadout: Equatable {
     var capturedAt: Date
     var vote: FrameVote?
@@ -42,6 +51,11 @@ final class GuardModel: ObservableObject {
     @Published var whiteScreenActive = false
     @Published var lastReadout: CaptureReadout?
     @Published var lastThumbnail: UIImage?
+    /// Wall clock of the JPEG on screen. Set as soon as the frame exists, before classify returns.
+    @Published var lastCapturedAt: Date?
+    @Published var judgePhase: JudgePhase = .idle
+    /// Seconds until the next capture. Negative when the guard is not running.
+    @Published var nextShotSeconds = -1
     @Published var snoreHint = ""
     @Published var health: HealthSnapshot?
     @Published private(set) var logs: [SessionLogLine] = []
@@ -82,6 +96,8 @@ final class GuardModel: ObservableObject {
     private var maskOnStreak = 0
     private var alarmArmed = false
     private var settleTimer: Timer?
+    private var shotTimer: Timer?
+    private var nextShotDeadline: Date?
     private var wearState = ContinuousWearState()
     private var loggedUnknownQuotaCap = false
 
@@ -96,7 +112,8 @@ final class GuardModel: ObservableObject {
         let storedInterval = defaults.object(forKey: Key.interval) as? Int ?? 8
         intervalSeconds = min(max(storedInterval, 5), 10)
         logs = [SessionLogLine(id: UUID(), date: Date(), text: L10n(language: language).logOpened)]
-        snoreHint = L10n(language: language).snoreLine(.off)
+        let opening = L10n(language: language)
+        snoreHint = SnoreFusion.audioAlarmEnabled ? opening.snoreLine(.off) : opening.snoreAlarmOff
         let stored = cloudMemory.load(now: Date())
         uploadEnabled = stored.uploadEnabled
         resumeRemaining = CloudUploadPolicy.remaining(stored)
@@ -178,6 +195,25 @@ final class GuardModel: ObservableObject {
         return l10n.resultLabel(lastReadout.vote ?? .uncertain, alarmed: lastReadout.alarmed || alarming)
     }
 
+    var judgeStatusText: String {
+        switch judgePhase {
+        case .idle:
+            return ""
+        case .capturing:
+            return l10n.phaseCapturing
+        case .uploading:
+            return l10n.phaseUploading
+        case .waitingResult:
+            return l10n.phaseWaiting
+        case .result(let text), .failed(let text):
+            return text
+        }
+    }
+
+    var visibleCaptureAt: Date? {
+        lastCapturedAt ?? lastReadout?.capturedAt
+    }
+
     var displayReason: String {
         guard let lastReadout else { return "" }
         if lastReadout.aimMissed { return l10n.aimSoftHint }
@@ -226,10 +262,18 @@ final class GuardModel: ObservableObject {
         )
     }
 
+    private func publishSnoreHint(_ snap: SnoreSnapshot = .off) {
+        if !SnoreFusion.audioAlarmEnabled {
+            snoreHint = l10n.snoreAlarmOff
+            return
+        }
+        snoreHint = l10n.snoreLine(snap)
+    }
+
     func setLanguage(_ language: AppLanguage) {
         self.language = language
         persist()
-        snoreHint = l10n.snoreLine(night.snapshot())
+        publishSnoreHint(night.snapshot())
     }
 
     func setInterval(_ seconds: Int) {
@@ -359,6 +403,7 @@ final class GuardModel: ObservableObject {
         guard await waitUntilInteractive(token) else { return }
 
         phase = .guarding
+        startShotClock()
         UIApplication.shared.isIdleTimerDisabled = true
         if fillMode == .frontScreen {
             torchEnabled = false
@@ -396,7 +441,8 @@ final class GuardModel: ObservableObject {
         UIApplication.shared.isIdleTimerDisabled = false
         endWhiteScreen()
         await lightsOffTorch()
-        snoreHint = l10n.snoreLine(.off)
+        publishSnoreHint()
+        endShotClock()
         record(l10n.logStopped, kind: "guard")
     }
 
@@ -412,6 +458,7 @@ final class GuardModel: ObservableObject {
         cameraLive = false
         aimPreviewOn = false
         endSettle()
+        endShotClock()
         night.stopAlarm()
         await night.stopSnore()
         await capture.stop()
@@ -420,7 +467,7 @@ final class GuardModel: ObservableObject {
         UIApplication.shared.isIdleTimerDisabled = false
         endWhiteScreen()
         await lightsOffTorch()
-        snoreHint = l10n.snoreLine(.off)
+        publishSnoreHint()
         phase = .leftForeground
         if wasGuarding {
             record(l10n.logLeft, kind: "guard")
@@ -569,13 +616,18 @@ final class GuardModel: ObservableObject {
     }
 
     func requestMicrophone() async {
+        guard SnoreFusion.audioAlarmEnabled else {
+            micNote = l10n.snoreAlarmOff
+            publishSnoreHint()
+            return
+        }
         let ok = await AVCaptureDevice.requestAccess(for: .audio)
         micNote = ok ? l10n.micGranted : l10n.micDenied
         record(l10n.logMic(ok))
         if ok, phase == .guarding {
             await night.startSnore()
         }
-        snoreHint = l10n.snoreLine(night.snapshot())
+        publishSnoreHint(night.snapshot())
     }
 
     func requestNotifications() async {
@@ -608,6 +660,9 @@ final class GuardModel: ObservableObject {
             guard stillGuarding(token) else { return }
             tickWatchdog()
             let started = Date()
+            nextShotDeadline = started.addingTimeInterval(TimeInterval(intervalSeconds))
+            tickShotClock()
+            judgePhase = .capturing
             do {
                 if fillMode == .rearAmbient {
                     let report = await capture.setTorch(enabled: torchEnabled, level: Float(torchLevel))
@@ -621,6 +676,10 @@ final class GuardModel: ObservableObject {
                 guard let payload = ImageEncode.jpegForCloud(raw) else {
                     throw CaptureError.empty
                 }
+                if let image = UIImage(data: payload) {
+                    lastThumbnail = image
+                }
+                lastCapturedAt = capturedAt
                 let scan = await aimScan(payload)
                 guard stillGuarding(token) else { return }
                 if !scan.verdict.valid {
@@ -686,7 +745,7 @@ final class GuardModel: ObservableObject {
         }
         let classifyStarted = Date()
         do {
-            let classified = try await classifyCloud(payload)
+            let classified = try await classifyCloud(payload, roundToken: token)
             guard stillGuarding(token) else { return }
             saveCircuit(CloudCircuitPolicy.onSuccess(circuit))
             noteMaskSeen(classified.vote)
@@ -783,6 +842,7 @@ final class GuardModel: ObservableObject {
             aimMissed: true
         )
         lastThumbnail = UIImage(data: payload)
+        judgePhase = .result(l10n.aimSoftResult)
         roundNote = l10n.aimSoftHint
         consecutiveFailures = 0
         markJudgment(capturedAt)
@@ -833,6 +893,7 @@ final class GuardModel: ObservableObject {
         consecutiveFailures = 0
         markJudgment(capturedAt)
         let result = hold ? l10n.resultLabel(.maskOff, alarmed: true) : l10n.pausedResult
+        judgePhase = .result(result)
         let line = l10n.logRound(
             time: SessionLogClock.precise(from: capturedAt),
             result: result,
@@ -873,7 +934,7 @@ final class GuardModel: ObservableObject {
         }
         let cameraShouldAlarm = armed && debouncer.onVote(classified.vote)
         let snap = night.snapshot()
-        snoreHint = l10n.snoreLine(snap)
+        publishSnoreHint(snap)
         let summary = l10n.cloudReason(classified.vote, raw: classified.raw)
         let decision: AlarmDecision = armed
             ? SnoreFusion.fuse(
@@ -908,6 +969,7 @@ final class GuardModel: ObservableObject {
             language: language
         )
         let result = l10n.resultLabel(classified.vote, alarmed: alarmed)
+        judgePhase = .result(result)
         if classified.promptTokens >= 0 || classified.completionTokens >= 0 {
             record("usage prompt=\(classified.promptTokens) completion=\(classified.completionTokens)")
         }
@@ -953,6 +1015,7 @@ final class GuardModel: ObservableObject {
             roundMs: roundMs
         )
         lastThumbnail = UIImage(data: payload)
+        judgePhase = .result(l10n.unjudged)
         roundNote = l10n.noKeyReason
         consecutiveFailures = 0
         markJudgment(capturedAt)
@@ -985,6 +1048,7 @@ final class GuardModel: ObservableObject {
         }
         consecutiveFailures += 1
         let message = l10n.failureMessage(error)
+        judgePhase = .failed(message)
         roundNote = message
         recordRound(
             message,
@@ -1008,10 +1072,11 @@ final class GuardModel: ObservableObject {
     }
 
     private func maybeAudioOnlyAlarm() {
+        guard SnoreFusion.audioAlarmEnabled else { return }
         guard phase == .guarding, !alarming else { return }
         guard maskAlarmArmed(at: Date()) else { return }
         let snap = night.snapshot()
-        snoreHint = l10n.snoreLine(snap)
+        publishSnoreHint(snap)
         let decision = SnoreFusion.fuse(
             cameraShouldAlarm: false,
             cameraVote: nil,
@@ -1049,20 +1114,26 @@ final class GuardModel: ObservableObject {
     }
 
     private func prepareSideChannels() async {
-        let audioStatus = AVCaptureDevice.authorizationStatus(for: .audio)
-        let micOK: Bool
-        if audioStatus == .notDetermined {
-            micOK = await AVCaptureDevice.requestAccess(for: .audio)
+        if SnoreFusion.audioAlarmEnabled {
+            let audioStatus = AVCaptureDevice.authorizationStatus(for: .audio)
+            let micOK: Bool
+            if audioStatus == .notDetermined {
+                micOK = await AVCaptureDevice.requestAccess(for: .audio)
+            } else {
+                micOK = audioStatus == .authorized
+            }
+            guard phase == .guarding else { return }
+            micNote = micOK ? l10n.micGranted : l10n.micDenied
+            record(l10n.logMic(micOK))
+            if micOK {
+                await night.startSnore()
+            }
+            publishSnoreHint(night.snapshot())
         } else {
-            micOK = audioStatus == .authorized
+            guard phase == .guarding else { return }
+            micNote = l10n.snoreAlarmOff
+            publishSnoreHint()
         }
-        guard phase == .guarding else { return }
-        micNote = micOK ? l10n.micGranted : l10n.micDenied
-        record(l10n.logMic(micOK))
-        if micOK {
-            await night.startSnore()
-        }
-        snoreHint = l10n.snoreLine(night.snapshot())
 
         let center = UNUserNotificationCenter.current()
         let settings = await center.notificationSettings()
@@ -1160,6 +1231,7 @@ final class GuardModel: ObservableObject {
 
     /// Quota refusal keeps the loop alive: no circuit open, no guard-failed trip.
     private func noteQuotaRetry(_ http: RelayHTTPError?) {
+        judgePhase = .result(l10n.gatewayQuotaRetry)
         roundNote = nil
         markJudgment(Date())
         recordRound(
@@ -1227,6 +1299,7 @@ final class GuardModel: ObservableObject {
             localOnly: true
         )
         lastThumbnail = UIImage(data: payload)
+        judgePhase = .result(l10n.localOnlyResult)
         roundNote = l10n.resumeExhausted
         consecutiveFailures = 0
         markJudgment(capturedAt)
@@ -1259,6 +1332,7 @@ final class GuardModel: ObservableObject {
             roundMs: roundMs
         )
         lastThumbnail = UIImage(data: payload)
+        judgePhase = .failed(l10n.circuitLocal)
         roundNote = l10n.circuitLocal
         consecutiveFailures = 0
         markJudgment(capturedAt)
@@ -1392,31 +1466,56 @@ final class GuardModel: ObservableObject {
         }
     }
 
-    private func classifyCloud(_ jpeg: Data) async throws -> CloudClassification {
+    private func classifyCloud(_ jpeg: Data, roundToken: Int? = nil) async throws -> CloudClassification {
         let version = l10n.appVersionLabel
+        let onUploaded: (@Sendable () -> Void)?
+        if let roundToken {
+            judgePhase = .uploading
+            onUploaded = uploadFinished(roundToken)
+        } else {
+            onUploaded = nil
+        }
         if AppSecrets.usesRelay {
             let deviceId = DeviceStamp.current()
             do {
                 return try await CpapRelayClient.shared.classify(
                     jpeg: jpeg,
                     deviceId: deviceId,
-                    appVersion: version
+                    appVersion: version,
+                    onUploaded: onUploaded
                 )
             } catch {
                 guard AppSecrets.hasMinimaxKey else { throw error }
                 record(l10n.relayFallback)
+                if roundToken != nil {
+                    judgePhase = .uploading
+                }
                 return try await MiniMaxClient.classify(
                     jpeg: jpeg,
                     apiKey: AppSecrets.minimaxAPIKey,
-                    endpoint: AppSecrets.minimaxEndpoint
+                    endpoint: AppSecrets.minimaxEndpoint,
+                    onUploaded: onUploaded
                 )
             }
         }
         return try await MiniMaxClient.classify(
             jpeg: jpeg,
             apiKey: AppSecrets.minimaxAPIKey,
-            endpoint: AppSecrets.minimaxEndpoint
+            endpoint: AppSecrets.minimaxEndpoint,
+            onUploaded: onUploaded
         )
+    }
+
+    /// Body has left the phone. The model result is still on the way.
+    private func uploadFinished(_ roundToken: Int) -> @Sendable () -> Void {
+        { [weak self] in
+            Task { @MainActor in
+                guard let self else { return }
+                guard self.transition == roundToken, self.phase == .guarding else { return }
+                guard self.judgePhase == .uploading else { return }
+                self.judgePhase = .waitingResult
+            }
+        }
     }
 
     private func noteMaskSeen(_ vote: FrameVote) {
@@ -1435,6 +1534,33 @@ final class GuardModel: ObservableObject {
         let elapsed = date.timeIntervalSince(guardStartedAt)
         let confirmed = maskOnStreak >= SettleGate.sustainedMaskOnFrames
         return SettleGate.maskOffAlarmAllowed(elapsed: elapsed, maskConfirmed: confirmed)
+    }
+
+    private func startShotClock() {
+        shotTimer?.invalidate()
+        let timer = Timer(timeInterval: 0.5, repeats: true) { [weak self] _ in
+            Task { @MainActor in
+                self?.tickShotClock()
+            }
+        }
+        RunLoop.main.add(timer, forMode: .common)
+        shotTimer = timer
+        tickShotClock()
+    }
+
+    private func tickShotClock() {
+        guard phase == .guarding, let deadline = nextShotDeadline else {
+            nextShotSeconds = -1
+            return
+        }
+        nextShotSeconds = max(0, Int(ceil(deadline.timeIntervalSinceNow)))
+    }
+
+    private func endShotClock() {
+        shotTimer?.invalidate()
+        shotTimer = nil
+        nextShotDeadline = nil
+        nextShotSeconds = -1
     }
 
     private func startSettleClock() {
