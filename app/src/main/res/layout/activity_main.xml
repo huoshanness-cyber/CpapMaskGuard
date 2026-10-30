@@ -52,6 +52,54 @@
             android:textColor="@color/muted"
             android:textSize="15sp" />
 
+        <!-- 守护进行中始终可见：倒计时、上一张、拍摄时间、判定过程。不依赖「更多」里的预览开关。 -->
+        <LinearLayout
+            android:id="@+id/monitorRoundCard"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="16dp"
+            android:background="@color/surface"
+            android:orientation="vertical"
+            android:padding="14dp"
+            android:visibility="gone">
+
+            <TextView
+                android:id="@+id/monitorCountdown"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:gravity="center_horizontal"
+                android:textColor="@color/accent"
+                android:textSize="32sp"
+                android:textStyle="bold" />
+
+            <ImageView
+                android:id="@+id/monitorLastFrame"
+                android:layout_width="match_parent"
+                android:layout_height="200dp"
+                android:layout_marginTop="8dp"
+                android:background="#000000"
+                android:contentDescription="@string/monitor_last_frame_desc"
+                android:scaleType="fitCenter"
+                android:visibility="gone" />
+
+            <TextView
+                android:id="@+id/monitorCaptureTime"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp"
+                android:textColor="@color/text"
+                android:textSize="16sp" />
+
+            <TextView
+                android:id="@+id/monitorJudgePhase"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="4dp"
+                android:textColor="@color/text"
+                android:textSize="18sp"
+                android:textStyle="bold" />
+        </LinearLayout>
+
         <!-- 兼容旧绑定：状态卡片已拆成上面两行，保留不可见壳避免大改 -->
         <com.google.android.material.card.MaterialCardView
             android:id="@+id/statusCard"

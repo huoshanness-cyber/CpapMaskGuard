@@ -105,6 +105,9 @@ enum AlarmDecision: Equatable {
 
 /// Camera vote plus local snore confirmation. Mirrors `SnoreFusion` on Android.
 enum SnoreFusion {
+    /// Heuristic snore false-alarms on conversation. Off until a real model is wired.
+    /// Flip to `true` to restore the audio-only alarm path kept below.
+    static let audioAlarmEnabled = false
     static let audioAlarmMsWhenNotOn = 6_000
     static let audioAlarmMsWhenOn = 12_000
 
@@ -114,6 +117,25 @@ enum SnoreFusion {
         snoreConfirmed: Bool,
         snoreConfirmedForMs: Int
     ) -> AlarmDecision {
+        fuse(
+            cameraShouldAlarm: cameraShouldAlarm,
+            cameraVote: cameraVote,
+            snoreConfirmed: snoreConfirmed,
+            snoreConfirmedForMs: snoreConfirmedForMs,
+            audioAlarmEnabled: audioAlarmEnabled
+        )
+    }
+
+    static func fuse(
+        cameraShouldAlarm: Bool,
+        cameraVote: FrameVote?,
+        snoreConfirmed: Bool,
+        snoreConfirmedForMs: Int,
+        audioAlarmEnabled: Bool
+    ) -> AlarmDecision {
+        if !audioAlarmEnabled {
+            return cameraShouldAlarm ? .camera(audioAssisted: false) : .quiet
+        }
         if cameraShouldAlarm {
             return .camera(audioAssisted: snoreConfirmed)
         }

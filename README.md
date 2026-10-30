@@ -140,7 +140,7 @@ xcodebuild -project CpapMaskGuard.xcodeproj -scheme CpapMaskGuard \
 
 MiniMax key：把 `ios/CpapMaskGuard/Config/Secrets.xcconfig.example` 复制成同目录 `Secrets.xcconfig`（已 gitignore），填入 Key 后重新编译安装。Key 只出现在本机 Info.plist 的构建结果里，源码和日志都不写真 Key。
 
-真机：用 Xcode 打开工程，选已连接的 iPhone，Run。签名是 Automatic，Team `H45MTM24C4`。模拟器没有真手电筒，云端判定也需要真人和网络，床头测试请用真机，并保持 App 在前台、屏幕常亮。装上后本机状态应显示 **0.4.2 (10)**。
+真机：用 Xcode 打开工程，选已连接的 iPhone，Run。签名是 Automatic，Team `H45MTM24C4`。模拟器没有真手电筒，云端判定也需要真人和网络，床头测试请用真机，并保持 App 在前台、屏幕常亮。装上后本机状态应显示 **0.4.2 (11)**。
 
 ### Overnight log / 夜间记录怎么拿走
 

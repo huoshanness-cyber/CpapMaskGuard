@@ -37,14 +37,14 @@ interface CloudMaskDetector {
      * @param jpegBytes 一帧 JPEG（建议已缩到较小分辨率）
      * @return 分类结果；失败时抛异常，由调用方回退本机
      */
-    suspend fun classify(jpegBytes: ByteArray): Result
+    suspend fun classify(jpegBytes: ByteArray, onUploaded: (() -> Unit)? = null): Result
 }
 
 /** 占位：无 Key 时使用，classify 直接失败。 */
 class UnimplementedCloudMaskDetector : CloudMaskDetector {
     override val configured: Boolean = false
 
-    override suspend fun classify(jpegBytes: ByteArray): CloudMaskDetector.Result {
+    override suspend fun classify(jpegBytes: ByteArray, onUploaded: (() -> Unit)?): CloudMaskDetector.Result {
         throw IllegalStateException("未配置 MiniMax API Key，跳过云端。")
     }
 }
@@ -61,7 +61,7 @@ class MiniMaxCloudMaskDetector(
 ) : CloudMaskDetector {
     override val configured: Boolean = apiKey.isNotBlank()
 
-    override suspend fun classify(jpegBytes: ByteArray): CloudMaskDetector.Result {
+    override suspend fun classify(jpegBytes: ByteArray, onUploaded: (() -> Unit)?): CloudMaskDetector.Result {
         if (!configured) {
             throw IllegalStateException("MiniMax API Key 为空")
         }
@@ -70,12 +70,12 @@ class MiniMaxCloudMaskDetector(
         }
         return withContext(Dispatchers.IO) {
             withTimeout(timeoutMs) {
-                postClassify(jpegBytes)
+                postClassify(jpegBytes, onUploaded)
             }
         }
     }
 
-    private fun postClassify(jpegBytes: ByteArray): CloudMaskDetector.Result {
+    private fun postClassify(jpegBytes: ByteArray, onUploaded: (() -> Unit)?): CloudMaskDetector.Result {
         val b64 = Base64.encodeToString(jpegBytes, Base64.NO_WRAP)
         val dataUrl = "data:image/jpeg;base64,$b64"
         val body = JSONObject()
@@ -128,6 +128,7 @@ class MiniMaxCloudMaskDetector(
                 w.write(body)
                 w.flush()
             }
+            onUploaded?.invoke()
             val code = conn.responseCode
             val stream = if (code in 200..299) conn.inputStream else conn.errorStream
             val raw = stream?.use { inp ->

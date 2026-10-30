@@ -197,8 +197,10 @@ class MonitorService : LifecycleService() {
                 Notifications.notifyGuardFailure(this@MonitorService, "守护已中断，点此恢复", detail, fullScreen = true)
                 return@launch
             }
-            audioStarted = snore.start()
-            if (!audioStarted) {
+            audioStarted = if (SnoreFusion.AUDIO_ALARM_ENABLED) snore.start() else false
+            if (!SnoreFusion.AUDIO_ALARM_ENABLED) {
+                AppLogger.i(LOG_TAG, "听鼾报警已关闭，不打开麦克风")
+            } else if (!audioStarted) {
                 AppLogger.w(LOG_TAG, "听鼾未启动（无权限或麦克风失败），仅相机监测")
             }
             roundCount = 0
@@ -219,14 +221,23 @@ class MonitorService : LifecycleService() {
                     "这一分钟内不会因为没戴面罩响铃。$prepared · $modeHint"
                 } else if (audioStarted) {
                     "$prepared · $modeHint · 听鼾已开"
-                } else {
+                } else if (SnoreFusion.AUDIO_ALARM_ENABLED) {
                     "$prepared · $modeHint · 听鼾未开（仅相机）"
+                } else {
+                    "$prepared · $modeHint · 听鼾报警已关闭"
                 },
                 capture.nightExtension,
             )
             ensureWakeForCycle(effectiveIntervalMs())
             while (isActive && settingsStore.settings().monitoringRequested) {
                 val startedAt = SystemClock.elapsedRealtime()
+                val cycleMs = effectiveIntervalMs()
+                MonitorRuntime.update {
+                    it.copy(
+                        nextShotEpochMs = System.currentTimeMillis() + cycleMs,
+                        judgePhase = "正在拍摄",
+                    )
+                }
                 val settings = settingsStore.settings()
                 try {
                     val shotInSettle = inSettle()
@@ -259,6 +270,8 @@ class MonitorService : LifecycleService() {
                     // 抓拍完成时刻：用于界面/日志「拍摄时间」，必须在判定之前记
                     val captureEpoch = System.currentTimeMillis()
                     val captureElapsed = SystemClock.elapsedRealtime()
+                    saveLastFrame(file, captureEpoch)
+                    MonitorRuntime.update { it.copy(lastFrameEpochMs = captureEpoch) }
                     // 拍照后小米常把灯掐掉；立刻重新点亮并 await
                     capture.setTorch(wantTorch, settings.torchLevel)
                     val previewOn = settingsStore.isMonitorPreviewActive()
@@ -277,6 +290,9 @@ class MonitorService : LifecycleService() {
                             holdMaskOffAlarm = !gate.uploadEnabled && gate.lastCloudWasMaskOff && !localOnly,
                             localFallback = localOnly,
                             circuit = cloudUpload.circuit(),
+                            onPhase = { phase ->
+                                MonitorRuntime.update { it.copy(judgePhase = phase) }
+                            },
                         )
                     }
                     cloudUpload.saveCircuit(decision.circuit)
@@ -296,9 +312,6 @@ class MonitorService : LifecycleService() {
                     // 界面列表：一眼能看拍摄时间、结果、判定耗时
                     val uiLine =
                         "$timeText  $resultLabel  判定${decision.inferMs}ms  拍到判定${captureToJudgeMs}ms  整轮${spent}ms"
-                    if (previewOn) {
-                        saveLastFrame(file, captureEpoch)
-                    }
                     // 预览开或关都写入，开预览时列表立刻可见
                     MonitorRuntime.appendCaptureLog(uiLine)
                     file.delete()
@@ -356,6 +369,7 @@ class MonitorService : LifecycleService() {
                         resultLabel = "$resultLabel · ${decision.inferMs}ms",
                         frameEpochMs = captureEpoch,
                         capturedInSettle = shotInSettle,
+                        judgePhase = resultLabel,
                     )
                 } catch (error: TimeoutCancellationException) {
                     noteFailure("这一张拍太久，下一轮再试")
@@ -368,7 +382,6 @@ class MonitorService : LifecycleService() {
                     noteFailure("这一轮没拍成：${AppLogger.summarize(error)}")
                     maybeAudioOnlyAlarm()
                 }
-                val cycleMs = effectiveIntervalMs()
                 ensureWakeForCycle(cycleMs)
                 val wait = cycleMs - (SystemClock.elapsedRealtime() - startedAt)
                 if (wait > 0) {
@@ -390,6 +403,7 @@ class MonitorService : LifecycleService() {
 
     /** @return true 若已因音频触发报警 */
     private fun maybeAudioOnlyAlarm(): Boolean {
+        if (!SnoreFusion.AUDIO_ALARM_ENABLED) return false
         if (alarm.isPlaying) return false
         onSettleEdge()
         if (inSettle()) return false
@@ -414,6 +428,7 @@ class MonitorService : LifecycleService() {
         resultLabel: String? = null,
         frameEpochMs: Long = System.currentTimeMillis(),
         capturedInSettle: Boolean = false,
+        judgePhase: String? = null,
     ) {
         onSettleEdge()
         val snoreBit = if (audioStarted) " · ${snore.lastHint}" else ""
@@ -431,6 +446,7 @@ class MonitorService : LifecycleService() {
                 snoreHint = snore.lastHint,
                 resultLabel = resultLabel,
                 frameEpochMs = frameEpochMs,
+                judgePhase = judgePhase,
             )
             return
         }
@@ -445,6 +461,7 @@ class MonitorService : LifecycleService() {
                 snoreHint = snore.lastHint,
                 resultLabel = resultLabel ?: "面罩脱落",
                 frameEpochMs = frameEpochMs,
+                judgePhase = judgePhase ?: "面罩脱落",
             )
             return
         }
@@ -459,6 +476,7 @@ class MonitorService : LifecycleService() {
                 snoreHint = snore.lastHint,
                 resultLabel = resultLabel,
                 frameEpochMs = frameEpochMs,
+                judgePhase = judgePhase,
             )
             return
         }
@@ -478,6 +496,7 @@ class MonitorService : LifecycleService() {
                 snoreHint = snore.lastHint,
                 resultLabel = resultLabel ?: "面罩脱落",
                 frameEpochMs = frameEpochMs,
+                judgePhase = judgePhase ?: "面罩脱落",
             )
             try {
                 startActivity(
@@ -506,6 +525,7 @@ class MonitorService : LifecycleService() {
             snoreHint = snore.lastHint,
             resultLabel = resultLabel,
             frameEpochMs = frameEpochMs,
+            judgePhase = judgePhase,
         )
     }
 
@@ -610,7 +630,7 @@ class MonitorService : LifecycleService() {
         val status = if (tripped) RunStatus.ERROR else RunStatus.MONITORING
         val headline = if (tripped) "守护失效" else "正在确认面罩"
         val detail = if (tripped) "连续判定失败。$message" else message
-        publish(status, headline, detail, capture.nightExtension, snoreHint = snore.lastHint)
+        publish(status, headline, detail, capture.nightExtension, snoreHint = snore.lastHint, judgePhase = message)
         if (step.justTripped) {
             Notifications.notifyGuardFailure(this, "守护失效", "连续判定失败。$message", fullScreen = false)
         }
@@ -658,7 +678,7 @@ class MonitorService : LifecycleService() {
 
     private fun foregroundType(): Int {
         var type = ServiceInfo.FOREGROUND_SERVICE_TYPE_CAMERA
-        if (Build.VERSION.SDK_INT >= 34 && snore.hasPermission()) {
+        if (Build.VERSION.SDK_INT >= 34 && SnoreFusion.AUDIO_ALARM_ENABLED && snore.hasPermission()) {
             type = type or ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE
         }
         return type
@@ -684,7 +704,7 @@ class MonitorService : LifecycleService() {
             if (!wrote) {
                 source.copyTo(dest, overwrite = true)
             }
-            AppLogger.i(LOG_TAG, "已写 last.jpg ${dest.length()}B previewOn=true recompress=$wrote clock=$clock")
+            AppLogger.i(LOG_TAG, "已写 last.jpg ${dest.length()}B recompress=$wrote clock=$clock")
         } catch (error: Exception) {
             // 写盘失败不影响检测主路径
             AppLogger.w(LOG_TAG, "保存 last.jpg 失败", error)
@@ -767,6 +787,7 @@ class MonitorService : LifecycleService() {
         snoreHint: String? = null,
         resultLabel: String? = null,
         frameEpochMs: Long = System.currentTimeMillis(),
+        judgePhase: String? = null,
     ) {
         MonitorRuntime.update {
             it.copy(
@@ -784,6 +805,12 @@ class MonitorService : LifecycleService() {
                     status == RunStatus.STOPPED -> 0L
                     inSettle() -> guardStartedElapsed + SettleGate.WINDOW_MS
                     else -> 0L
+                },
+                nextShotEpochMs = if (status == RunStatus.STOPPED) 0L else it.nextShotEpochMs,
+                judgePhase = when {
+                    status == RunStatus.STOPPED -> null
+                    judgePhase != null -> judgePhase
+                    else -> it.judgePhase
                 },
             )
         }

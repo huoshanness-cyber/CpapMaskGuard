@@ -3,6 +3,7 @@ package app.cpapmaskguard.core
 import kotlin.math.PI
 import kotlin.math.sin
 import kotlin.test.Test
+import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
@@ -46,10 +47,26 @@ class SnoreFusionTest {
     fun cameraAlarmWins() {
         val r = SnoreFusion.fuse(true, FrameVote.CLOSER_TO_MASK_OFF, false, 0, "cam")
         assertTrue(r.shouldAlarm)
+        assertEquals("cam", r.reason)
     }
 
     @Test
-    fun audioAloneAfterDwell() {
+    fun maskOffStillAlarmsWhenSnoreFlagIsOff() {
+        val r = SnoreFusion.fuse(
+            true,
+            FrameVote.CLOSER_TO_MASK_OFF,
+            true,
+            SnoreFusion.AUDIO_ALARM_MS_WHEN_ON,
+            "云端：面罩脱落/未戴",
+        )
+        assertTrue(r.shouldAlarm)
+        assertEquals("云端：面罩脱落/未戴", r.reason)
+        assertFalse(r.audioAssisted)
+        assertFalse(r.reason.contains("音频确认打呼"))
+    }
+
+    @Test
+    fun audioAloneDoesNotAlarmOrBecomeTheReasonByDefault() {
         val r = SnoreFusion.fuse(
             false,
             FrameVote.UNCERTAIN,
@@ -57,18 +74,36 @@ class SnoreFusionTest {
             SnoreFusion.AUDIO_ALARM_MS_WHEN_NOT_ON,
             "cam",
         )
-        assertTrue(r.shouldAlarm)
-        assertTrue(r.audioAssisted)
+        assertFalse(r.shouldAlarm)
+        assertEquals("cam", r.reason)
+        assertFalse(r.reason.contains("音频确认打呼"))
+        assertFalse(SnoreFusion.AUDIO_ALARM_ENABLED)
     }
 
     @Test
-    fun audioNeedsLongerWhenCameraSaysOn() {
+    fun audioAloneAfterDwellWhenFlagOn() {
+        val r = SnoreFusion.fuse(
+            false,
+            FrameVote.UNCERTAIN,
+            true,
+            SnoreFusion.AUDIO_ALARM_MS_WHEN_NOT_ON,
+            "cam",
+            audioAlarmEnabled = true,
+        )
+        assertTrue(r.shouldAlarm)
+        assertTrue(r.audioAssisted)
+        assertTrue(r.reason.contains("音频确认打呼"))
+    }
+
+    @Test
+    fun audioNeedsLongerWhenCameraSaysOnAndFlagOn() {
         val early = SnoreFusion.fuse(
             false,
             FrameVote.CLOSER_TO_MASK_ON,
             true,
             SnoreFusion.AUDIO_ALARM_MS_WHEN_NOT_ON,
             "cam",
+            audioAlarmEnabled = true,
         )
         assertFalse(early.shouldAlarm)
         val late = SnoreFusion.fuse(
@@ -77,6 +112,7 @@ class SnoreFusionTest {
             true,
             SnoreFusion.AUDIO_ALARM_MS_WHEN_ON,
             "cam",
+            audioAlarmEnabled = true,
         )
         assertTrue(late.shouldAlarm)
     }

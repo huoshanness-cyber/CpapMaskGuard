@@ -25,6 +25,7 @@ import app.cpapmaskguard.capture.AimPreview
 import app.cpapmaskguard.capture.AimPreviewTarget
 import app.cpapmaskguard.capture.CameraTuning
 import app.cpapmaskguard.core.SettleGate
+import app.cpapmaskguard.core.SnoreFusion
 import app.cpapmaskguard.core.BatteryEstimate
 import app.cpapmaskguard.core.DetectionConfig
 import app.cpapmaskguard.core.MonitorPolicy
@@ -65,6 +66,9 @@ class MainActivity : AppCompatActivity() {
     private var aimPreview: AimPreview? = null
     private var aimSignature: String? = null
     private var settleTickerJob: Job? = null
+    private var roundTickerJob: Job? = null
+    private var monitorDecodeJob: Job? = null
+    private var monitorShownEpoch = 0L
     private var suppressKilledBannerUntil = 0L
     private var previewExpireJob: Job? = null
     private var previewUiJob: Job? = null
@@ -109,7 +113,7 @@ class MainActivity : AppCompatActivity() {
                 pendingBurnIn = false
                 startBurnIn()
             } else {
-                if (!micOk) toast(getString(R.string.mic_denied_toast))
+                if (SnoreFusion.AUDIO_ALARM_ENABLED && !micOk) toast(getString(R.string.mic_denied_toast))
                 maybePromptBatteryThenStart()
             }
         }
@@ -409,8 +413,93 @@ class MainActivity : AppCompatActivity() {
         binding.skipBanner.visibility = if (current.calibrationSkipped) View.VISIBLE else View.GONE
         refreshKilledBanner(snapshot)
         updatePreviewUi(snapshot, running)
+        updateMonitorRoundCard(snapshot, running)
         updateAimWindow(snapshot, running)
         if (!running) refreshBaseline()
+    }
+
+    private fun updateMonitorRoundCard(snapshot: MonitorSnapshot, running: Boolean) {
+        if (!running) {
+            roundTickerJob?.cancel()
+            roundTickerJob = null
+            monitorShownEpoch = 0L
+            binding.monitorLastFrame.setImageDrawable(null)
+            binding.monitorRoundCard.visibility = View.GONE
+            return
+        }
+        binding.monitorRoundCard.visibility = View.VISIBLE
+        startRoundTicker()
+        val now = System.currentTimeMillis()
+        val remainMs = snapshot.nextShotEpochMs - now
+        binding.monitorCountdown.text = if (snapshot.nextShotEpochMs <= 0L) {
+            getString(R.string.monitor_next_soon)
+        } else if (remainMs <= 0L) {
+            getString(R.string.monitor_next_soon)
+        } else {
+            val seconds = ((remainMs + 999L) / 1000L).toInt()
+            getString(R.string.monitor_next_shot, seconds)
+        }
+        val phase = snapshot.judgePhase?.takeIf { it.isNotBlank() } ?: getString(R.string.status_checking)
+        binding.monitorJudgePhase.text = phase
+        val phaseColor = when {
+            phase.contains("没拍成") || phase.contains("失败") || phase.contains("太久") -> R.color.danger
+            phase.contains("脱落") -> R.color.amber
+            else -> R.color.text
+        }
+        binding.monitorJudgePhase.setTextColor(ContextCompat.getColor(this, phaseColor))
+        if (snapshot.lastFrameEpochMs > 0L) {
+            val clock = DateTimeFormatter.ofPattern("HH:mm:ss.SSS")
+                .withZone(ZoneId.systemDefault())
+                .format(Instant.ofEpochMilli(snapshot.lastFrameEpochMs))
+            binding.monitorCaptureTime.text = getString(R.string.monitor_capture_time, clock)
+        } else {
+            binding.monitorCaptureTime.text = getString(R.string.monitor_waiting_first)
+        }
+        val lastFile = File(cacheDir, "monitor/last.jpg")
+        val hasFrame = lastFile.exists() && lastFile.length() > 0L && snapshot.lastFrameEpochMs > 0L
+        if (!hasFrame) {
+            binding.monitorLastFrame.visibility = View.GONE
+            return
+        }
+        binding.monitorLastFrame.visibility = View.VISIBLE
+        if (snapshot.lastFrameEpochMs != monitorShownEpoch) {
+            monitorShownEpoch = snapshot.lastFrameEpochMs
+            reloadMonitorFrame(lastFile)
+        }
+    }
+
+    private fun startRoundTicker() {
+        if (roundTickerJob?.isActive == true) return
+        roundTickerJob = lifecycleScope.launch {
+            while (true) {
+                delay(1_000)
+                val snap = MonitorRuntime.snapshot.value
+                val running = when (snap.status) {
+                    RunStatus.MONITORING, RunStatus.STARTING, RunStatus.ALARMING -> true
+                    RunStatus.ERROR -> MonitorService.alive.get()
+                    RunStatus.STOPPED -> false
+                }
+                if (!running) break
+                updateMonitorRoundCard(snap, true)
+            }
+        }
+    }
+
+    private fun reloadMonitorFrame(lastFile: File) {
+        monitorDecodeJob?.cancel()
+        val targetW = binding.monitorLastFrame.width.takeIf { it > 0 }
+            ?: resources.displayMetrics.widthPixels
+        val targetH = binding.monitorLastFrame.height.takeIf { it > 0 } ?: targetW
+        val path = lastFile.absolutePath
+        monitorDecodeJob = lifecycleScope.launch {
+            val bmp = withContext(Dispatchers.Default) {
+                decodePreviewSampled(path, targetW, targetH)
+            }
+            if (bmp != null) {
+                binding.monitorLastFrame.setImageBitmap(bmp)
+                binding.monitorLastFrame.visibility = View.VISIBLE
+            }
+        }
     }
 
     private fun updateAimWindow(snapshot: MonitorSnapshot, running: Boolean) {
@@ -1003,7 +1092,8 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun requiredPermissions(): List<String> {
-        val permissions = mutableListOf(Manifest.permission.CAMERA, Manifest.permission.RECORD_AUDIO)
+        val permissions = mutableListOf(Manifest.permission.CAMERA)
+        if (SnoreFusion.AUDIO_ALARM_ENABLED) permissions += Manifest.permission.RECORD_AUDIO
         if (Build.VERSION.SDK_INT >= 33) permissions += Manifest.permission.POST_NOTIFICATIONS
         return permissions
     }

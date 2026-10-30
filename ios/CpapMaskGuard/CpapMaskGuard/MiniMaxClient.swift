@@ -33,7 +33,8 @@ enum MiniMaxClient {
     static func classify(
         jpeg: Data,
         apiKey: String,
-        endpoint: URL = defaultEndpoint
+        endpoint: URL = defaultEndpoint,
+        onUploaded: (@Sendable () -> Void)? = nil
     ) async throws -> CloudClassification {
         let key = apiKey.trimmingCharacters(in: .whitespacesAndNewlines)
         if key.isEmpty || key.contains("$(") {
@@ -77,7 +78,7 @@ enum MiniMaxClient {
         let data: Data
         let response: URLResponse
         do {
-            (data, response) = try await URLSession.shared.data(for: request)
+            (data, response) = try await CloudHTTP.data(for: request, onUploaded: onUploaded)
         } catch let error as URLError {
             let note = error.code == .timedOut ? "timeout" : error.localizedDescription
             throw MiniMaxError.transport(redact(note, key: key))

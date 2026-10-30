@@ -164,43 +164,67 @@ struct RootView: View {
     @ViewBuilder
     private var captureCard: some View {
         if model.phase == .guarding || model.lastReadout != nil {
-            VStack(alignment: .leading, spacing: 6) {
+            VStack(alignment: .leading, spacing: 8) {
                 Text(model.l10n.lastCaptureTitle)
                     .font(.subheadline.weight(.semibold))
                     .foregroundStyle(foregroundMuted)
-                if let readout = model.lastReadout {
-                    labeled(model.l10n.capturedLabel, SessionLogClock.precise(from: readout.capturedAt))
-                        .accessibilityIdentifier("home.capture.time")
-                    labeled(model.l10n.resultWord, model.displayResult)
-                        .accessibilityIdentifier("home.capture.result")
-                    Text(model.l10n.latencyLine(readout))
-                        .font(.subheadline.monospacedDigit())
+                if model.phase == .guarding, model.nextShotSeconds >= 0 {
+                    Text(model.l10n.nextShot(model.nextShotSeconds))
+                        .font(.system(size: 34, weight: .bold, design: .rounded))
+                        .monospacedDigit()
                         .foregroundStyle(foregroundText)
-                        .accessibilityIdentifier("home.capture.latency")
-                    if model.phase == .guarding, !model.displayReason.isEmpty {
-                        Text(model.displayReason)
-                            .font(.footnote)
-                            .foregroundStyle(foregroundMuted)
-                            .fixedSize(horizontal: false, vertical: true)
-                    }
+                        .accessibilityIdentifier("home.nextShot")
+                }
+                if let image = model.lastThumbnail {
+                    Image(uiImage: image)
+                        .resizable()
+                        .scaledToFit()
+                        .frame(maxWidth: .infinity)
+                        .frame(minHeight: 120, maxHeight: 220)
+                        .background(Color.black.opacity(0.08))
+                        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                        .accessibilityIdentifier("home.lastFrame")
+                }
+                if let capturedAt = model.visibleCaptureAt {
+                    labeled(model.l10n.capturedLabel, SessionLogClock.precise(from: capturedAt))
+                        .accessibilityIdentifier("home.capture.time")
+                }
+                if !model.judgeStatusText.isEmpty {
+                    Text(model.judgeStatusText)
+                        .font(.title3.weight(.semibold))
+                        .foregroundStyle(judgeColor)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .accessibilityIdentifier("home.judgePhase")
                 } else if model.relayClassifyCapped {
                     Text(model.l10n.gatewayQuotaRetry)
                         .font(.body)
                         .foregroundStyle(foregroundText)
                         .fixedSize(horizontal: false, vertical: true)
                         .accessibilityIdentifier("home.classifyRetry")
-                } else {
+                } else if model.lastReadout == nil {
                     Text(model.l10n.takingFirst)
                         .font(.body)
                         .foregroundStyle(foregroundText)
                 }
-                    if model.phase == .guarding, model.judgmentAgeSeconds >= 0 {
-                        Text(model.l10n.lastJudgment(model.judgmentAgeSeconds))
-                            .font(.subheadline.monospacedDigit().weight(model.watchdogStale ? .bold : .regular))
-                            .foregroundStyle(model.watchdogStale ? Color.red : foregroundMuted)
-                            .accessibilityIdentifier("home.judgmentAge")
-                    }
-                    if model.phase == .guarding {
+                if case .result = model.judgePhase, !model.displayReason.isEmpty {
+                    Text(model.displayReason)
+                        .font(.footnote)
+                        .foregroundStyle(foregroundMuted)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                if let readout = model.lastReadout, case .result = model.judgePhase {
+                    Text(model.l10n.latencyLine(readout))
+                        .font(.subheadline.monospacedDigit())
+                        .foregroundStyle(foregroundText)
+                        .accessibilityIdentifier("home.capture.latency")
+                }
+                if model.phase == .guarding, model.judgmentAgeSeconds >= 0 {
+                    Text(model.l10n.lastJudgment(model.judgmentAgeSeconds))
+                        .font(.subheadline.monospacedDigit().weight(model.watchdogStale ? .bold : .regular))
+                        .foregroundStyle(model.watchdogStale ? Color.red : foregroundMuted)
+                        .accessibilityIdentifier("home.judgmentAge")
+                }
+                if model.phase == .guarding {
                     Text(model.snoreHint)
                         .font(.footnote)
                         .foregroundStyle(foregroundMuted)
@@ -209,18 +233,25 @@ struct RootView: View {
                         .foregroundStyle(foregroundMuted)
                         .fixedSize(horizontal: false, vertical: true)
                 }
-                if let image = model.lastThumbnail {
-                    Image(uiImage: image)
-                        .resizable()
-                        .scaledToFit()
-                        .frame(maxWidth: .infinity, maxHeight: 180)
-                        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-                }
             }
             .padding(14)
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(model.whiteScreenActive ? Color.black.opacity(0.04) : GuardTheme.surface)
             .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+        }
+    }
+
+    private var judgeColor: Color {
+        switch model.judgePhase {
+        case .failed:
+            return Color.red
+        case .result(let text):
+            if text.contains("脱落") || text == "Mask off" {
+                return model.whiteScreenActive ? Color(red: 0.55, green: 0.28, blue: 0.05) : GuardTheme.amber
+            }
+            return foregroundText
+        default:
+            return foregroundText
         }
     }
 

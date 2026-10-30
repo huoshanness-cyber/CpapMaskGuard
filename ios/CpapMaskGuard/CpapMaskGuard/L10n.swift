@@ -29,6 +29,16 @@ struct L10n {
     var capturedLabel: String { language == .zh ? "拍摄时间" : "Captured" }
     var resultWord: String { language == .zh ? "结果" : "Result" }
     var takingFirst: String { language == .zh ? "正在拍第一张…" : "Taking the first photo…" }
+    var phaseCapturing: String { language == .zh ? "正在拍摄" : "Taking a photo" }
+    var phaseUploading: String { language == .zh ? "上传中" : "Uploading" }
+    var phaseWaiting: String { language == .zh ? "上传成功，等待结果" : "Uploaded. Waiting for the result." }
+    func nextShot(_ seconds: Int) -> String {
+        if seconds <= 0 {
+            return language == .zh ? "即将拍摄" : "Next photo now"
+        }
+        return language == .zh ? "下一张 \(seconds) 秒" : "Next photo in \(seconds)s"
+    }
+    var snoreAlarmOff: String { language == .zh ? "听鼾报警已关闭" : "Snore alarm is off" }
 
     func headline(
         phase: GuardPhase,
@@ -200,12 +210,12 @@ struct L10n {
     func uploadNote(hasKey: Bool) -> String {
         if hasKey {
             return language == .zh
-                ? "全黑、全白或糊成一片才不上云。拿不准会照常上传判定。连续 10 次脱落会停下上传。声音只在本机判断。"
-                : "Only a black, white, or badly blurred frame stays off the cloud. An uncertain frame is still sent. Ten mask-off results in a row stop uploads. Audio stays on the phone."
+                ? "全黑、全白或糊成一片才不上云。拿不准会照常上传判定。连续 10 次脱落会停下上传。听鼾报警已关闭。"
+                : "Only a black, white, or badly blurred frame stays off the cloud. An uncertain frame is still sent. Ten mask-off results in a row stop uploads. The snore alarm is off."
         }
         return language == .zh
-            ? "还没有 MiniMax Key，照片不会上传，云端也无法判定。听鼾仍可在确认打呼后响铃。"
-            : "No MiniMax key, so photos are not uploaded and the cloud cannot judge them. A confirmed snore can still alarm."
+            ? "还没有 MiniMax Key，照片不会上传，云端也无法判定。听鼾报警已关闭。"
+            : "No MiniMax key, so photos are not uploaded and the cloud cannot judge them. The snore alarm is off."
     }
 
     var healthTitle: String { language == .zh ? "本机状态" : "Phone status" }
@@ -540,8 +550,8 @@ struct L10n {
     }
     var resumeExhausted: String {
         language == .zh
-            ? "今晚的恢复次数已用完。继续本机听鼾兜底，不再上传画面。"
-            : "No upload resumes left tonight. Snore detection continues on this phone, without sending photos."
+            ? "今晚的恢复次数已用完。不再上传画面。听鼾报警已关闭。"
+            : "No upload resumes left tonight. Photos stay on this phone. The snore alarm is off."
     }
     var longWearTitle: String {
         language == .zh ? "佩戴时间过长" : "Mask has been on a long time"
@@ -625,7 +635,7 @@ struct L10n {
             : "\(streak) mask-off results in a row. Uploads stopped. The alarm continues. \(remaining) resumes left tonight."
     }
 
-    /// Marketing version and build from the bundle, for example `0.4.2 (10)`.
+    /// Marketing version and build from the bundle, for example `0.4.2 (11)`.
     var appVersionLabel: String {
         let info = Bundle.main.infoDictionary ?? [:]
         let version = (info["CFBundleShortVersionString"] as? String ?? "")

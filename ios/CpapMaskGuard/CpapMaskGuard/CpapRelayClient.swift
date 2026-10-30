@@ -34,7 +34,12 @@ actor CpapRelayClient {
     private var tokenExpiry = Date.distantPast
     private var pepperHint: String?
 
-    func classify(jpeg: Data, deviceId: String, appVersion: String) async throws -> CloudClassification {
+    func classify(
+        jpeg: Data,
+        deviceId: String,
+        appVersion: String,
+        onUploaded: (@Sendable () -> Void)? = nil
+    ) async throws -> CloudClassification {
         guard let base = AppSecrets.relayBaseURL else { throw RelayError.disabled }
         guard !jpeg.isEmpty else { throw RelayError.emptyImage }
         let payload = ImageEncode.jpegForCloud(jpeg) ?? jpeg
@@ -45,7 +50,8 @@ actor CpapRelayClient {
                 base: base,
                 deviceId: deviceId,
                 appVersion: appVersion,
-                allowRetry: true
+                allowRetry: true,
+                onUploaded: onUploaded
             )
         } catch let error as RelayError {
             guard case .http(let http) = error, http.status == 401 else { throw error }
@@ -56,7 +62,8 @@ actor CpapRelayClient {
                 base: base,
                 deviceId: deviceId,
                 appVersion: appVersion,
-                allowRetry: false
+                allowRetry: false,
+                onUploaded: onUploaded
             )
         }
     }
@@ -66,7 +73,8 @@ actor CpapRelayClient {
         base: URL,
         deviceId: String,
         appVersion: String,
-        allowRetry: Bool
+        allowRetry: Bool,
+        onUploaded: (@Sendable () -> Void)? = nil
     ) async throws -> CloudClassification {
         let token = try await ensureToken(base: base, deviceId: deviceId, appVersion: appVersion)
         let image: [String: Any] = [
@@ -91,7 +99,8 @@ actor CpapRelayClient {
             json: body,
             bearer: token,
             appVersion: appVersion,
-            timeout: 20
+            timeout: 20,
+            onUploaded: onUploaded
         )
         if code == 401 && allowRetry {
             throw RelayError.http(httpFailure(401, raw))
@@ -170,7 +179,8 @@ actor CpapRelayClient {
         json: [String: Any]?,
         bearer: String?,
         appVersion: String,
-        timeout: TimeInterval
+        timeout: TimeInterval,
+        onUploaded: (@Sendable () -> Void)? = nil
     ) async throws -> (Int, String) {
         let url = Self.endpoint(base, path)
         var request = URLRequest(url: url, cachePolicy: .reloadIgnoringLocalCacheData, timeoutInterval: timeout)
@@ -187,7 +197,7 @@ actor CpapRelayClient {
             request.httpBody = try JSONSerialization.data(withJSONObject: json)
         }
         do {
-            let (data, response) = try await URLSession.shared.data(for: request)
+            let (data, response) = try await CloudHTTP.data(for: request, onUploaded: onUploaded)
             let code = (response as? HTTPURLResponse)?.statusCode ?? -1
             let text = String(data: data, encoding: .utf8) ?? ""
             return (code, text)
@@ -271,6 +281,55 @@ actor CpapRelayClient {
         let one = text.replacingOccurrences(of: "\\s+", with: " ", options: .regularExpression)
         if one.count > 160 { return String(one.prefix(160)) }
         return one
+    }
+}
+
+enum CloudHTTP {
+    static func data(
+        for request: URLRequest,
+        onUploaded: (@Sendable () -> Void)?
+    ) async throws -> (Data, URLResponse) {
+        guard let onUploaded else {
+            return try await URLSession.shared.data(for: request)
+        }
+        let watcher = UploadBodyWatcher(onUploaded: onUploaded)
+        let session = URLSession(configuration: .ephemeral, delegate: watcher, delegateQueue: nil)
+        do {
+            let result = try await session.data(for: request)
+            session.finishTasksAndInvalidate()
+            return result
+        } catch {
+            session.finishTasksAndInvalidate()
+            throw error
+        }
+    }
+}
+
+/// Fires once the request body has been handed to the connection, before the response is read.
+final class UploadBodyWatcher: NSObject, URLSessionTaskDelegate {
+    private let onUploaded: @Sendable () -> Void
+    private let lock = NSLock()
+    private var fired = false
+
+    init(onUploaded: @escaping @Sendable () -> Void) {
+        self.onUploaded = onUploaded
+    }
+
+    func urlSession(
+        _ session: URLSession,
+        task: URLSessionTask,
+        didSendBodyData bytesSent: Int64,
+        totalBytesSent: Int64,
+        totalBytesExpectedToSend: Int64
+    ) {
+        guard totalBytesExpectedToSend > 0, totalBytesSent >= totalBytesExpectedToSend else { return }
+        lock.lock()
+        let first = !fired
+        fired = true
+        lock.unlock()
+        if first {
+            onUploaded()
+        }
     }
 }
 
