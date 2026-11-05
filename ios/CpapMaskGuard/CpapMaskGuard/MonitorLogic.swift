@@ -44,22 +44,19 @@ enum LabelParser {
 
 /// Same meaning as Android `DetectionConfig.DEBOUNCE_CONSECUTIVE`.
 enum DetectionConfig {
-    /// Two frames. One side-sleep mislabel must not ring.
-    static let debounceConsecutive = 2
+    /// Three frames (~27s at 9s interval). Two-frame phone/occlusion mislabels must not ring.
+    static let debounceConsecutive = 3
 }
 
-/// Two consecutive MASK_OFF frames are required (`DetectionConfig.debounceConsecutive` = 2).
-/// A single MASK_OFF does not ring.
-/// NO_PERSON clears the streak and does not alarm. Too many UNCERTAIN frames clear it too.
+/// Three consecutive MASK_OFF frames are required (`DetectionConfig.debounceConsecutive` = 3).
+/// A single MASK_OFF does not ring. UNCERTAIN clears the streak (does not count toward OFF).
+/// NO_PERSON clears the streak and does not alarm.
 final class Debouncer {
     private let required: Int
-    private let maxUncertainStreak: Int
     private(set) var maskOffStreak = 0
-    private(set) var uncertainStreak = 0
 
-    init(required: Int = DetectionConfig.debounceConsecutive, maxUncertainStreak: Int = 2) {
+    init(required: Int = DetectionConfig.debounceConsecutive) {
         self.required = required
-        self.maxUncertainStreak = maxUncertainStreak
     }
 
     /// True only on the frame that first reaches `required`.
@@ -68,22 +65,14 @@ final class Debouncer {
         switch vote {
         case .maskOff:
             if maskOffStreak < required { maskOffStreak += 1 }
-            uncertainStreak = 0
-        case .maskOn, .noPerson:
+        case .maskOn, .noPerson, .uncertain:
             maskOffStreak = 0
-            uncertainStreak = 0
-        case .uncertain:
-            uncertainStreak += 1
-            if uncertainStreak >= maxUncertainStreak {
-                maskOffStreak = 0
-            }
         }
         return before < required && maskOffStreak >= required
     }
 
     func reset() {
         maskOffStreak = 0
-        uncertainStreak = 0
     }
 }
 
