@@ -24,9 +24,14 @@ enum MiniMaxClient {
     MASK_ON — a person is present and wearing a CPAP/BiPAP nasal or full-face mask
     MASK_OFF — a person is present but the mask is clearly off the face (removed, hanging away, or missing)
     NO_PERSON — the person is obviously absent, or the frame is completely unreadable
-    UNCERTAIN — cannot tell (blurry, extreme angle, ambiguous)
+    UNCERTAIN — cannot tell (blurry, extreme angle, ambiguous, or the face is partly blocked)
     Side sleep is still MASK_ON when the mask stays on: the person is lying on their side, only the back of the head or a side of the face is visible, or the headband / headgear or the corrugated tube is still on the face or beside the pillow. Do not label MASK_OFF only because of pose while the mask is still worn.
     侧睡、只见后脑勺或侧脸、头带或波纹管仍在脸上或床边，仍判 MASK_ON。不要因为姿态把仍戴着的面罩判成 MASK_OFF。
+    Phone near the face, screen glow, a hand/arm, or bedding partly covering the face is still MASK_ON when the nasal pillows / cushion, headgear, or corrugated tube is still visible on the face. Do not label MASK_OFF only because a phone is held up or the face is partly occluded.
+    玩手机贴脸或屏光、手臂/被褥挡住部分面部，但鼻罩/头带/波纹管仍可见时，仍判 MASK_ON。不要因为手机或遮挡把仍戴着的面罩判成 MASK_OFF。
+    If occlusion or lighting makes it unclear whether the mask is still seated, reply UNCERTAIN — never guess MASK_OFF.
+    遮挡或光线导致看不清鼻罩是否仍在位时，判 UNCERTAIN，禁止猜测 MASK_OFF。
+    MASK_OFF only when the mask is clearly off the face (removed, hanging away from the face, or missing).
     NO_PERSON only when the person is clearly not in the frame or the frame cannot be seen at all. 人明显不在画面里，或完全看不清，才用 NO_PERSON。
     """
 

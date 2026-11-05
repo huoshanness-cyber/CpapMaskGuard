@@ -9,15 +9,10 @@ package app.cpapmaskguard.core
 object DetectionConfig {
     /**
      * 连续多少帧都「更接近没戴面罩」才响铃。
-     * 真机夜测：侧睡仍戴罩时，云端会把单独一帧判成脱落。
-     * 默认 2，这一帧不响。抓拍大约 8 秒一张，第二帧仍在大约 10–30 秒的叫醒窗口里。
+     * 真机夜测：玩手机贴脸 / 手臂挡脸仍戴罩时，云端会连续两帧误标脱落。
+     * 默认 3（约 9 秒一张 → ~27 秒窗口）。单帧、双帧误标不响。
      */
-    const val DEBOUNCE_CONSECUTIVE = 2
-
-    /**
-     * 连续多少帧「看不清 / 两边差不多 / 无人」之后，把已经累计的脱落票清掉。
-     */
-    const val MAX_UNCERTAIN_STREAK = 2
+    const val DEBOUNCE_CONSECUTIVE = 3
 
     // ---- 旧灰度比对（fallback）----
 
